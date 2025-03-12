@@ -94,23 +94,25 @@ call:ReplaceString "%INFER_PY_FILE%" "/home/DakeQQ/Downloads/F5_Optimized/" "%EX
 
 cd "%SCRIPT_DIR%/Export_ONNX/F5_TTS"
 
-@rem python ./Export_F5.py || goto OnError
+python ./Export_F5.py || goto OnError
+
+@echo.
+@echo Model exported at %EXPORT_DIR%
+@echo.
 
 set /p OP="Continue Optimize Model ? y/n[n]"
 
 if /i "%OP%" == "y" (
     @echo All Model Exported, Wait Optimize ...
 
-    @rem python ./Optimize_ONNX_DML.py --model "F5_Preprocess.onnx"
-    @rem python ./Optimize_ONNX_DML.py --model "F5_Transformer.onnx"
-    @rem python ./Optimize_ONNX.py --model "F5_Decode.onnx"
+    python ./Optimize_ONNX_DML.py --model "F5_Transformer.onnx"
 
     @echo.
     @echo All Done !!
 )
 
 @REM If you want to inference, use bellow:
-python "%SCRIPT_DIR%/F5-TTS-ONNX-Inference.py"
+@rem python "%SCRIPT_DIR%/F5-TTS-ONNX-Inference.py"
 
 
 @rem restore code ? if you want
