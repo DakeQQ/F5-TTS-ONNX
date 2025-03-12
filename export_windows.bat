@@ -1,4 +1,5 @@
 @echo off
+
 chcp 65001
 
 
@@ -73,7 +74,7 @@ pip install onnxslim onnxconverter_common --upgrade
 
 call:ReplaceString "%EXPORT_PY_FILE%" "/home/DakeQQ/Downloads/F5-TTS-main/src/f5_tts/infer/examples/basic/generated.wav" "%EXPORT_DIR%/infer_result.wav"
 call:ReplaceString "%EXPORT_PY_FILE%" "/home/DakeQQ/Downloads/F5-TTS-main" "%F5_TTS_PROJECT_DIR%"
-call:ReplaceString "%EXPORT_PY_FILE%" "/home/DakeQQ/Downloads/F5TTS_Base" "%F5_TTS_MODEL_DIR%/F5TTS_Base"
+call:ReplaceString "%EXPORT_PY_FILE%" "/home/DakeQQ/Downloads/F5-TTS_Emilia-ZH-EN/F5TTS_Base" "%F5_TTS_MODEL_DIR%/F5TTS_Base"
 call:ReplaceString "%EXPORT_PY_FILE%" "/home/DakeQQ/Downloads/vocos-mel-24khz" "%VOCOS_DIR%"
 call:ReplaceString "%EXPORT_PY_FILE%" "/home/DakeQQ/Downloads/F5_ONNX/" "%EXPORT_DIR%/"
 
@@ -89,24 +90,29 @@ call:ReplaceString "%INFER_PY_FILE%" "/home/DakeQQ/Downloads/F5-TTS-main/src/f5_
 call:ReplaceString "%INFER_PY_FILE%" "/home/DakeQQ/Downloads/F5-TTS-main" "%F5_TTS_PROJECT_DIR%"
 call:ReplaceString "%INFER_PY_FILE%" "/home/DakeQQ/Downloads/F5_Optimized/" "%EXPORT_DIR%/"
 
-
 @REM ---------------------- Start Python Execution--------------------------
 
 cd "%SCRIPT_DIR%/Export_ONNX/F5_TTS"
 
 python ./Export_F5.py || goto OnError
 
-@echo All Model Exported, Wait Optimize ...
+@echo.
+@echo Model exported at %EXPORT_DIR%
+@echo.
 
-python ./Optimize_ONNX.py --model "F5_Preprocess.onnx"
-python ./Optimize_ONNX.py --model "F5_Transformer.onnx"
-python ./Optimize_ONNX.py --model "F5_Decode.onnx"
+set /p OP="Continue Optimize Model ? y/n[n]"
 
-echo.
-@echo All Done !!
+if /i "%OP%" == "y" (
+    @echo All Model Exported, Wait Optimize ...
+
+    python ./Optimize_ONNX_DML.py --model "F5_Transformer.onnx"
+
+    @echo.
+    @echo All Done !!
+)
 
 @REM If you want to inference, use bellow:
-@REM python "%SCRIPT_DIR%/F5-TTS-ONNX-Inference.py"
+@rem python "%SCRIPT_DIR%/F5-TTS-ONNX-Inference.py"
 
 
 @rem restore code ? if you want
