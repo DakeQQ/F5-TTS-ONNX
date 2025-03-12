@@ -15,8 +15,8 @@ args = parser.parse_args()
 print("model: ", args.model)
 
 # Path Setting
-original_folder_path = "F:\\Works\\F5-TTS-ONNX-Exporter\\Output"                                 # The fp32 saved folder.
-optimized_folder_path = "F:\\Works\\F5-TTS-ONNX-Exporter\\Output\\Optimized"                           # The optimized folder.
+original_folder_path = "/home/DakeQQ/Downloads/F5_ONNX"                                 # The fp32 saved folder.
+optimized_folder_path = "/home/DakeQQ/Downloads/F5_Optimized"    
 model_path = os.path.join(original_folder_path, args.model)                             # The original fp32 model name.
 optimized_model_path = os.path.join(optimized_folder_path, args.model)                  # The optimized model name.
 
