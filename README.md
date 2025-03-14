@@ -4,7 +4,7 @@
 Run **F5-TTS** using ONNX Runtime for efficient and flexible text-to-speech processing.
 
 ### Updates  
-- **F5-TTS-V1**: It currently does not support the latest v1 of [**SWivid/F5-TTS**](https://github.com/SWivid/F5-TTS). Please wait a few days.
+- **F5-TTS-V1**: It currently does not support the latest [**SWivid/F5-TTS**](https://github.com/SWivid/F5-TTS) - v1. Please wait a few days.
 - The latest version accepts audio in `int16` format (short) and also outputs in `int16` format. The previous version supported the float format, but it is no longer supported in the current Inference.py.
 - 2025/3/01 Update: [endink](https://github.com/endink) Add a Windows one-key export script to facilitate the use of Windows integration users. The script will automatically install dependencies. Usage:
   ```
