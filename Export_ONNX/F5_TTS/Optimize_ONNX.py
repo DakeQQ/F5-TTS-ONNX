@@ -29,7 +29,7 @@ optimized_model_path = os.path.join(optimized_folder_path, "F5_Preprocess.onnx")
 # optimized_model_path = os.path.join(optimized_folder_path, "F5_Decode.onnx")          # The optimized model name.
 
 use_gpu_fp16 = False                                                                    # If true, the transformers.optimizer will remain the FP16 processes.
-provider = 'CUDAExecutionProvider'                                                      # ['CPUExecutionProvider', 'CUDAExecutionProvider']
+provider = 'CPUExecutionProvider'                                                       # ['CPUExecutionProvider', 'CUDAExecutionProvider']
 target_platform = "amd64"                                                               # ['arm', 'amd64']; The 'amd64' means x86_64 desktop, not means the AMD chip.
 
 
