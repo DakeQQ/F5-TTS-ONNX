@@ -462,7 +462,6 @@ ref_audio_len = audio.shape[-1] // HOP_LENGTH + 1
 max_duration = np.array(ref_audio_len + int(ref_audio_len / ref_text_len * gen_text_len / SPEED), dtype=np.int64)
 gen_text = convert_char_to_pinyin([ref_text + gen_text])
 text_ids = list_str_to_idx(gen_text, vocab_char_map).numpy()
-time_step = np.array([0], dtype=np.int32)
 
 
 print("\n\nRun F5-TTS by ONNX Runtime.")
@@ -492,9 +491,8 @@ for i in range(NFE_STEP):
             in_name_B2: rope_sin,
             in_name_B3: cat_mel_text,
             in_name_B4: cat_mel_text_drop,
-            in_name_B5: time_step
+            in_name_B5: np.array([i], dtype=np.int32)  # time_step
         })[0]
-    time_step += 1
 
 if use_fp16_transformer:
     noise = noise.astype(np.float32)
