@@ -78,7 +78,7 @@ vocab_size = len(vocab_char_map)
 
 # Replace the original source code.
 # Note! please re-install the vocos after the export process.
-# Note! please re-install the d5-tts after the export process.
+# Note! please re-install the f5-tts after the export process.
 shutil.copyfile('./modeling_modified/vocos/heads.py', python_package_path + '/vocos/heads.py')
 shutil.copyfile('./modeling_modified/vocos/models.py', python_package_path + '/vocos/models.py')
 shutil.copyfile('./modeling_modified/vocos/modules.py', python_package_path + '/vocos/modules.py')
