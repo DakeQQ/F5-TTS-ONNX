@@ -4,9 +4,9 @@
 Run **F5-TTS** using ONNX Runtime for efficient and flexible text-to-speech processing.
 
 ### Updates  
-- **F5-TTS-V1**: It currently does not support the latest [**SWivid/F5-TTS**](https://github.com/SWivid/F5-TTS) - v1. Please wait a few days.
+- 2025/3/16: It currently support the latest [**SWivid/F5-TTS**](https://github.com/SWivid/F5-TTS) - v1. Please `pip install f5-tts --upgrade` first.
 - The latest version accepts audio in `int16` format (short) and also outputs in `int16` format. The previous version supported the float format, but it is no longer supported in the current Inference.py.
-- 2025/3/01 Update: [endink](https://github.com/endink) Add a Windows one-key export script to facilitate the use of Windows integration users. The script will automatically install dependencies. Usage:
+- 2025/3/01: Update: [endink](https://github.com/endink) Add a Windows one-key export script to facilitate the use of Windows integration users. The script will automatically install dependencies. Usage:
   ```
    conda create -n f5_tts_export python=3.10 -y
    
@@ -21,8 +21,8 @@ Run **F5-TTS** using ONNX Runtime for efficient and flexible text-to-speech proc
 - 2025/3/05 Update: The issue of silence output when using float16 has now been resolved. Please set `use_fp16_transformer = True  # (Export_F5.py, Line: 23)` before export.
 
 ### Features  
-1. **AMD GPU + Windows OS**:  
-   - Easy solution using ONNX-DirectML for AMD GPUs on Windows.  
+1. **Windows OS + Intel/AMD/Nvidia GPU**:  
+   - Easy solution using ONNX-DirectML for GPUs on Windows.  
    - Install ONNX Runtime DirectML:  
      ```bash
      pip install onnxruntime-directml --upgrade
@@ -76,9 +76,9 @@ Run **F5-TTS** using ONNX Runtime for efficient and flexible text-to-speech proc
 通过 ONNX Runtime 运行 **F5-TTS**，实现高效灵活的文本转语音处理。
 
 ### 更新  
-- 目前不支持最新的 [**SWivid/F5-TTS**](https://github.com/SWivid/F5-TTS) - v1，请稍等几天。
+- 2025/3/16: 支持最新的 [**SWivid/F5-TTS**](https://github.com/SWivid/F5-TTS) - v1，请先`pip install f5-tts --upgrade`。
 - 最新版本接收的音频格式为 `int16`（short），输出也是 `int16` 格式。上一版本支持 float 格式，但在当前的 Inference.py 中已不再支持。
-- 2025/3/01 更新: [endink](https://github.com/endink) 添加一个 windows 一键导出脚本，方便广大 windows 集成用户使用，脚本会自动安装依赖。使用方法：
+- 2025/3/01: 更新: [endink](https://github.com/endink) 添加一个 windows 一键导出脚本，方便广大 windows 集成用户使用，脚本会自动安装依赖。使用方法：
   ```
    conda create -n f5_tts_export python=3.10 -y
    
@@ -93,8 +93,8 @@ Run **F5-TTS** using ONNX Runtime for efficient and flexible text-to-speech proc
 - 2025/3/05 更新: 使用 float16 时出现的静音输出问题现已解决。在导出之前，请设置 `use_fp16_transformer = True  # (Export_F5.py，第 23 行)`。
 
 ### 功能  
-1. **AMD GPU + Windows 操作系统**：  
-   - 针对 AMD GPU 的简单解决方案，通过 ONNX-DirectML 在 Windows 上运行。  
+1. **Windows 操作系统 + Intel/AMD/Nvidia GPU**：  
+   - 针对 GPU 的简单解决方案，通过 ONNX-DirectML 在 Windows 上运行。  
    - 安装 ONNX Runtime DirectML：  
      ```bash
      pip install onnxruntime-directml --upgrade
