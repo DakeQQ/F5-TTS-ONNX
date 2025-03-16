@@ -5,8 +5,8 @@ Run **F5-TTS** using ONNX Runtime for efficient and flexible text-to-speech proc
 
 ### Updates  
 - 2025/3/16: It currently support the latest [**SWivid/F5-TTS**](https://github.com/SWivid/F5-TTS) - v1. Please `pip install f5-tts --upgrade` first.
-- 2025/3/05 Update: The issue of silence output when using float16 has now been resolved. Please set `use_fp16_transformer = True  # (Export_F5.py, Line: 23)` before export.
-- 2025/3/01: Update: [endink](https://github.com/endink) Add a Windows one-key export script to facilitate the use of Windows integration users. The script will automatically install dependencies. Usage:
+- 2025/3/05: The issue of silence output when using float16 has now been resolved. Please set `use_fp16_transformer = True  # (Export_F5.py, Line: 21)` before export.
+- 2025/3/01: [endink](https://github.com/endink) Add a Windows one-key export script to facilitate the use of Windows integration users. The script will automatically install dependencies. Usage:
   ```
    conda create -n f5_tts_export python=3.10 -y
    
@@ -77,8 +77,8 @@ Run **F5-TTS** using ONNX Runtime for efficient and flexible text-to-speech proc
 
 ### 更新  
 - 2025/3/16: 支持最新的 [**SWivid/F5-TTS**](https://github.com/SWivid/F5-TTS) - v1，请先`pip install f5-tts --upgrade`。
-- 2025/3/05 更新: 使用 float16 时出现的静音输出问题现已解决。在导出之前，请设置 `use_fp16_transformer = True  # (Export_F5.py，第 23 行)`。
-- 2025/3/01: 更新: [endink](https://github.com/endink) 添加一个 windows 一键导出脚本，方便广大 windows 集成用户使用，脚本会自动安装依赖。使用方法：
+- 2025/3/05 使用 float16 时出现的静音输出问题现已解决。在导出之前，请设置 `use_fp16_transformer = True  # (Export_F5.py，第 21 行)`。
+- 2025/3/01: [endink](https://github.com/endink) 添加一个 windows 一键导出脚本，方便广大 windows 集成用户使用，脚本会自动安装依赖。使用方法：
   ```
    conda create -n f5_tts_export python=3.10 -y
    
