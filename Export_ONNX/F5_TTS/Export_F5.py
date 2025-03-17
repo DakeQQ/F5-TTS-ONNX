@@ -106,9 +106,9 @@ class F5Preprocess(torch.nn.Module):
         inv_freq = 1.0 / (base ** (torch.arange(0, head_dim, 2).float() / head_dim))
         freqs = torch.outer(torch.arange(MAX_SIGNAL_LENGTH, dtype=torch.float32), inv_freq) / self.interpolation_factor
         freqs = freqs.repeat_interleave(2, dim=-1).unsqueeze(0).unsqueeze(0).repeat(2, num_head, 1, 1)
-        self.rope_cos = freqs.cos().half()
-        self.rope_sin = freqs.sin().half()
-        self.fbank = (torchaudio.functional.melscale_fbanks(nfft // 2 + 1, 20, sample_rate // 2, n_mels, sample_rate, None, 'htk')).transpose(0, 1).unsqueeze(0)
+        self.rope_cos = freqs.cos()
+        self.rope_sin = freqs.sin()
+        self.fbank = (torchaudio.functional.melscale_fbanks(nfft // 2 + 1, 0, sample_rate // 2, n_mels, sample_rate, None, 'htk')).transpose(0, 1).unsqueeze(0)
         self.inv_int16 = float(1.0 / 32768.0)
 
     def forward(self,
@@ -123,8 +123,8 @@ class F5Preprocess(torch.nn.Module):
         ref_signal_len = mel_signal.shape[1]
         mel_signal = torch.cat((mel_signal, torch.zeros((1, max_duration - ref_signal_len, self.num_channels), dtype=torch.float32)), dim=1)
         noise = torch.randn((1, max_duration, self.num_channels), dtype=torch.float32)
-        rope_cos = self.rope_cos[:, :, :max_duration, :].float()
-        rope_sin = self.rope_sin[:, :, :max_duration, :].float()
+        rope_cos = self.rope_cos[:, :, :max_duration, :]
+        rope_sin = self.rope_sin[:, :, :max_duration, :]
         text, text_drop = self.f5_text_embed(torch.cat((text_ids + 1, torch.zeros((1, max_duration - text_ids.shape[-1]), dtype=torch.int32)), dim=-1), max_duration)
         cat_mel_text = torch.cat((mel_signal, text), dim=-1)
         cat_mel_text_drop = torch.cat((torch.zeros((1, max_duration, self.num_channels), dtype=torch.float32), text_drop), dim=-1)
