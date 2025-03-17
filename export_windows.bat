@@ -133,7 +133,7 @@ if /i "%OP%" == "y" (
 )
 
 @REM If you want to inference, use bellow:
-python "%INFER_PY_FILE%"
+@REM python "%INFER_PY_FILE%"
 
 
 @rem restore code ? if you want
