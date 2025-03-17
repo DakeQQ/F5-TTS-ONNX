@@ -94,26 +94,21 @@ from f5_tts.infer.utils_infer import load_checkpoint
 
 
 class F5Preprocess(torch.nn.Module):
-    def __init__(self, f5_model, custom_stft, nfft, n_mels, sample_rate, num_head, head_dim, target_rms, hidden_size):
+    def __init__(self, f5_model, custom_stft, nfft, n_mels, sample_rate, num_head, head_dim, target_rms):
         super(F5Preprocess, self).__init__()
         self.f5_text_embed = f5_model.transformer.text_embed
         self.custom_stft = custom_stft
         self.num_channels = n_mels
-        self.nfft = nfft
-        self.target_sample_rate = sample_rate
-        self.num_head = num_head
-        self.head_dim = head_dim
         self.base_rescale_factor = 1.0      # Official setting
         self.interpolation_factor = 1.0     # Official setting
         self.target_rms = target_rms
-        self.hidden_size = hidden_size
-        base = 10000.0 * self.base_rescale_factor ** (self.head_dim / (self.head_dim - 2))
-        inv_freq = 1.0 / (base ** (torch.arange(0, self.head_dim, 2).float() / self.head_dim))
+        base = 10000.0 * self.base_rescale_factor ** (head_dim / (head_dim - 2))
+        inv_freq = 1.0 / (base ** (torch.arange(0, head_dim, 2).float() / head_dim))
         freqs = torch.outer(torch.arange(MAX_SIGNAL_LENGTH, dtype=torch.float32), inv_freq) / self.interpolation_factor
-        self.freqs = freqs.repeat_interleave(2, dim=-1).unsqueeze(0).unsqueeze(0).repeat(2, num_head, 1, 1)
-        self.rope_cos = self.freqs.cos().half()
-        self.rope_sin = self.freqs.sin().half()
-        self.fbank = (torchaudio.functional.melscale_fbanks(self.nfft // 2 + 1, 20, 12000, self.num_channels, self.target_sample_rate, None, 'htk')).transpose(0, 1).unsqueeze(0)
+        freqs = freqs.repeat_interleave(2, dim=-1).unsqueeze(0).unsqueeze(0).repeat(2, num_head, 1, 1)
+        self.rope_cos = freqs.cos().half()
+        self.rope_sin = freqs.sin().half()
+        self.fbank = (torchaudio.functional.melscale_fbanks(nfft // 2 + 1, 20, sample_rate // 2, n_mels, sample_rate, None, 'htk')).transpose(0, 1).unsqueeze(0)
         self.inv_int16 = float(1.0 / 32768.0)
 
     def forward(self,
@@ -144,16 +139,15 @@ class F5Transformer(torch.nn.Module):
         self.freq_embed_dim = 256
         self.time_mlp_dim = 1024
         self.cfg_strength = cfg
-        self.steps = steps
         self.sway_sampling_coef = sway_coef
-        t = torch.linspace(0, 1, self.steps + 1, dtype=torch.float32)
+        t = torch.linspace(0, 1, steps + 1, dtype=torch.float32)
         time_step = t + self.sway_sampling_coef * (torch.cos(torch.pi * 0.5 * t) - 1 + t)
         self.delta_t = torch.diff(time_step).to(dtype)
-        self.time_expand = torch.zeros((self.steps, self.time_mlp_dim), dtype=torch.float32)
+        self.time_expand = torch.zeros((steps, self.time_mlp_dim), dtype=torch.float32)
         half_dim = self.freq_embed_dim // 2
         emb_factor = math.log(10000) / (half_dim - 1)
         emb_factor = 1000.0 * torch.exp(torch.arange(half_dim, dtype=torch.float32) * -emb_factor)
-        for i in range(self.steps):
+        for i in range(steps):
             emb = time_step[i] * emb_factor
             emb = torch.cat((emb.sin(), emb.cos()), dim=-1)
             self.time_expand[[i], :] = self.time_mlp(emb)
@@ -273,7 +267,7 @@ with torch.inference_mode():
     f5_model, NUM_HEAD, HIDDEN_SIZE = load_model(F5_safetensors_path)
     HEAD_DIM = HIDDEN_SIZE // NUM_HEAD
     custom_stft = STFT_Process(model_type='stft_B', n_fft=NFFT, hop_len=HOP_LENGTH, max_frames=0, window_type=WINDOW_TYPE).eval()
-    f5_preprocess = F5Preprocess(f5_model, custom_stft, nfft=NFFT, n_mels=N_MELS, sample_rate=SAMPLE_RATE, num_head=NUM_HEAD, head_dim=HEAD_DIM, target_rms=TARGET_RMS, hidden_size=HIDDEN_SIZE)
+    f5_preprocess = F5Preprocess(f5_model, custom_stft, nfft=NFFT, n_mels=N_MELS, sample_rate=SAMPLE_RATE, num_head=NUM_HEAD, head_dim=HEAD_DIM, target_rms=TARGET_RMS)
     torch.onnx.export(
         f5_preprocess,
         (audio, text_ids, max_duration),
