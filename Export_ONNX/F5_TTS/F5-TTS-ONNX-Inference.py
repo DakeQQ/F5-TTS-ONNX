@@ -25,7 +25,7 @@ ORT_Accelerate_Providers = ['OpenVINOExecutionProvider']  # If you have accelera
                                                           # else keep empty.
 RANDOM_SEED = 9527                                        # Set seed to reproduce the generated audio
 NFE_STEP = 32                                             # F5-TTS model setting
-FUSE_NFE = 1                                              # Keep the same vale as exported model.
+FUSE_NFE = 1                                              # Maintain the same values as the exported model.
 SPEED = 1.0                                               # Set for talking speed. Only works with dynamic_axes=True
 MAX_THREADS = 8                                           # Max CPU parallel threads.
 DEVICE_ID = 0                                             # The GPU id, default to 0.
