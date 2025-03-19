@@ -195,7 +195,7 @@ gen_text = convert_char_to_pinyin([ref_text + gen_text])
 text_ids = list_str_to_idx(gen_text, vocab_char_map).numpy()
 time_step = np.array([0], dtype=np.int32)
 
-if "CPUExecutionProvider" in ORT_Accelerate_Providers or ORT_Accelerate_Providers == []:
+if "CPUExecutionProvider" in ORT_Accelerate_Providers or not ORT_Accelerate_Providers:
     device_type = 'cpu'
 if "CUDAExecutionProvider" in ORT_Accelerate_Providers or "TensorrtExecutionProvider" in ORT_Accelerate_Providers:
     device_type = 'cuda'
