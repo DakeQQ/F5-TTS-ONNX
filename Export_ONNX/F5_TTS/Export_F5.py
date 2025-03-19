@@ -42,13 +42,14 @@ ORT_Accelerate_Providers = []           # If you have accelerate devices for : [
                                         # else keep empty.
 # Model Parameters
 DYNAMIC_AXES = True                     # Default dynamic_axes is input audio length. Note, some providers only work for static axes.
+NFE_STEP = 32                           # F5-TTS model setting
+FUSE_NFE = 1                            # '1' means no fuse. '2' means fuse every 2 NFE steps into one to reduce GPU I/O binding times.
 SAMPLE_RATE = 24000                     # The generated audio sample rate
 CFG_STRENGTH = 2.0                      # F5-TTS model setting
 SWAY_COEFFICIENT = -1.0                 # F5-TTS model setting
 TARGET_RMS = 0.15                       # The root-mean-square value for the audio
 SPEED = 1.0                             # Set for talking speed. Only works with dynamic_axes=True
 RANDOM_SEED = 9527                      # Set seed to reproduce the generated audio
-NFE_STEP = 32                           # F5-TTS model setting
 HOP_LENGTH = 256                        # Number of samples between successive frames in the STFT. It affects the generated audio length and speech speed.
 
 # STFT/ISTFT Settings
@@ -89,12 +90,13 @@ if use_fp16_transformer:
 else:
     shutil.copyfile('./modeling_modified/F5/modules.py', python_package_path + '/f5_tts/model/modules.py')
 
+
 from f5_tts.model import CFM, DiT  # Do not delete DiT
 from f5_tts.infer.utils_infer import load_checkpoint
 
 
 class F5Preprocess(torch.nn.Module):
-    def __init__(self, f5_model, custom_stft, nfft, n_mels, sample_rate, num_head, head_dim, target_rms):
+    def __init__(self, f5_model, custom_stft, nfft, n_mels, sample_rate, num_head, head_dim, target_rms, use_fp16):
         super(F5Preprocess, self).__init__()
         self.f5_text_embed = f5_model.transformer.text_embed
         self.custom_stft = custom_stft
@@ -110,11 +112,12 @@ class F5Preprocess(torch.nn.Module):
         self.rope_sin = freqs.sin()
         self.fbank = (torchaudio.functional.melscale_fbanks(nfft // 2 + 1, 0, sample_rate // 2, n_mels, sample_rate, None, 'htk')).transpose(0, 1).unsqueeze(0)
         self.inv_int16 = float(1.0 / 32768.0)
+        self.use_fp16 = use_fp16
 
     def forward(self,
                 audio: torch.ShortTensor,
                 text_ids: torch.IntTensor,
-                max_duration: torch.IntTensor
+                max_duration: torch.IntTensor,
                 ):
         audio = audio.float() * self.inv_int16
         audio = audio * self.target_rms / torch.sqrt(torch.mean(audio * audio))  # Optional process
@@ -128,11 +131,13 @@ class F5Preprocess(torch.nn.Module):
         text, text_drop = self.f5_text_embed(torch.cat((text_ids + 1, torch.zeros((1, max_duration - text_ids.shape[-1]), dtype=torch.int32)), dim=-1), max_duration)
         cat_mel_text = torch.cat((mel_signal, text), dim=-1)
         cat_mel_text_drop = torch.cat((torch.zeros((1, max_duration, self.num_channels), dtype=torch.float32), text_drop), dim=-1)
+        if self.use_fp16:
+            return noise.half(), rope_cos.half(), rope_sin.half(), cat_mel_text.half(), cat_mel_text_drop.half(), ref_signal_len
         return noise, rope_cos, rope_sin, cat_mel_text, cat_mel_text_drop, ref_signal_len
 
 
 class F5Transformer(torch.nn.Module):
-    def __init__(self, f5_model, cfg, steps, sway_coef, dtype):
+    def __init__(self, f5_model, cfg, steps, sway_coef, dtype, fuse_step):
         super(F5Transformer, self).__init__()
         self.f5_transformer = f5_model.transformer
         self.time_mlp = f5_model.transformer.time_embed.time_mlp
@@ -152,6 +157,7 @@ class F5Transformer(torch.nn.Module):
             emb = torch.cat((emb.sin(), emb.cos()), dim=-1)
             self.time_expand[[i], :] = self.time_mlp(emb)
         self.time_expand = self.time_expand.to(dtype)
+        self.fuse_step = fuse_step
 
     def forward(self,
                 noise: torch.FloatTensor,
@@ -161,24 +167,30 @@ class F5Transformer(torch.nn.Module):
                 cat_mel_text_drop: torch.FloatTensor,
                 time_step: torch.IntTensor
                 ):
-        pred = self.f5_transformer(x=noise, cond=cat_mel_text, cond_drop=cat_mel_text_drop, time=self.time_expand[time_step], rope_cos=rope_cos, rope_sin=rope_sin)
-        pred, pred1 = pred.chunk(2, dim=0)
-        return noise + (pred + (pred - pred1) * self.cfg_strength) * self.delta_t[time_step]
+        for nfe in range(self.fuse_step):
+            pred = self.f5_transformer(x=noise, cond=cat_mel_text, cond_drop=cat_mel_text_drop, time=self.time_expand[time_step], rope_cos=rope_cos, rope_sin=rope_sin)
+            pred, pred1 = pred.chunk(2, dim=0)
+            noise += (pred + (pred - pred1) * self.cfg_strength) * self.delta_t[time_step]
+            time_step += 1
+        return noise, time_step
 
 
 class F5Decode(torch.nn.Module):
-    def __init__(self, vocos, custom_istft, target_rms):
+    def __init__(self, vocos, custom_istft, target_rms, use_fp16):
         super(F5Decode, self).__init__()
         self.vocos = vocos
         self.custom_istft = custom_istft
         self.target_rms = float(target_rms)
+        self.use_fp16 = use_fp16
 
     def forward(self,
                 denoised: torch.FloatTensor,
                 ref_signal_len: torch.LongTensor
                 ):
-        denoised = denoised[:, ref_signal_len:].transpose(1, 2)
-        denoised = self.vocos.decode(denoised)
+        denoised = denoised[:, ref_signal_len:]
+        if self.use_fp16:
+            denoised = denoised.float()
+        denoised = self.vocos.decode(denoised.transpose(1, 2))
         generated_signal = self.custom_istft(*denoised)
         generated_signal = generated_signal * self.target_rms / torch.sqrt(torch.mean(generated_signal * generated_signal))  # Optional process
         return (generated_signal * 32768.0).clamp(min=-32768.0, max=32767.0).to(torch.int16)
@@ -267,7 +279,7 @@ with torch.inference_mode():
     f5_model, NUM_HEAD, HIDDEN_SIZE = load_model(F5_safetensors_path)
     HEAD_DIM = HIDDEN_SIZE // NUM_HEAD
     custom_stft = STFT_Process(model_type='stft_B', n_fft=NFFT, hop_len=HOP_LENGTH, max_frames=0, window_type=WINDOW_TYPE).eval()
-    f5_preprocess = F5Preprocess(f5_model, custom_stft, nfft=NFFT, n_mels=N_MELS, sample_rate=SAMPLE_RATE, num_head=NUM_HEAD, head_dim=HEAD_DIM, target_rms=TARGET_RMS)
+    f5_preprocess = F5Preprocess(f5_model, custom_stft, nfft=NFFT, n_mels=N_MELS, sample_rate=SAMPLE_RATE, num_head=NUM_HEAD, head_dim=HEAD_DIM, target_rms=TARGET_RMS, use_fp16=use_fp16_transformer)
     torch.onnx.export(
         f5_preprocess,
         (audio, text_ids, max_duration),
@@ -298,7 +310,7 @@ print("\n\nStart to Export the F5-TTS Transformer Part.")
 with torch.inference_mode():
     scale_factor = math.pow(HEAD_DIM, -0.25)
     if use_fp16_transformer:
-        print("\nExporting F5_Transformer.onnx in float16 format will take a long time.")
+        print("\nNote: Exporting F5_Transformer.onnx in float16 format will take a long time.")
         scale_factor *= 0.1  # To avoid overflow in float16 format.
         dtype = torch.float16
     else:
@@ -316,7 +328,11 @@ with torch.inference_mode():
     cat_mel_text = torch.ones((1, MAX_DURATION, TEXT_EMBED_LENGTH), dtype=dtype)
     cat_mel_text_drop = torch.ones((1, MAX_DURATION, TEXT_EMBED_LENGTH), dtype=dtype)
     time_step = torch.tensor([0], dtype=torch.int32)
-    f5_transformer = F5Transformer(f5_model, cfg=CFG_STRENGTH, steps=NFE_STEP, sway_coef=SWAY_COEFFICIENT, dtype=dtype)
+    if FUSE_NFE > 1:
+        print('\nNote: NFE fusion is exporting. It may take a long time and create a large ONNX graph, potentially causing Netron to fail or increasing model loading time.')
+    else:
+        fuse_nfe_step = 1
+    f5_transformer = F5Transformer(f5_model, cfg=CFG_STRENGTH, steps=NFE_STEP, sway_coef=SWAY_COEFFICIENT, dtype=dtype, fuse_step=FUSE_NFE)
     if use_fp16_transformer:
         f5_transformer = f5_transformer.half()
     torch.onnx.export(
@@ -324,7 +340,7 @@ with torch.inference_mode():
         (noise, rope_cos, rope_sin, cat_mel_text, cat_mel_text_drop, time_step),
         onnx_model_B,
         input_names=['noise', 'rope_cos', 'rope_sin', 'cat_mel_text', 'cat_mel_text_drop', 'time_step'],
-        output_names=['denoised'],
+        output_names=['denoised', 'time_step'],
         dynamic_axes={
             'noise': {1: 'max_duration'},
             'rope_cos': {2: 'max_duration'},
@@ -349,7 +365,7 @@ with torch.inference_mode():
 print("\n\nStart to Export the F5-TTS Decode Part.")
 with torch.inference_mode():
     # Dummy for Export the F5_Decode part
-    denoised = torch.ones((1, MAX_DURATION, N_MELS), dtype=torch.float32)
+    denoised = torch.ones((1, MAX_DURATION, N_MELS), dtype=dtype)
     ref_signal_len = torch.tensor(REFERENCE_SIGNAL_LENGTH, dtype=torch.long)
 
     custom_istft = STFT_Process(model_type='istft_A', n_fft=NFFT, hop_len=HOP_LENGTH, max_frames=MAX_SIGNAL_LENGTH, window_type=WINDOW_TYPE).eval()
@@ -369,7 +385,7 @@ with torch.inference_mode():
         block.pwconv2.weight.data = (block.gamma.data.unsqueeze(-1) * block.pwconv2.weight.data).unsqueeze(0)
         block.pwconv2.bias.data = (block.gamma.data * block.pwconv2.bias.data).view(1, -1, 1)
 
-    f5_decode = F5Decode(vocos, custom_istft, target_rms=TARGET_RMS)
+    f5_decode = F5Decode(vocos, custom_istft, target_rms=TARGET_RMS, use_fp16=use_fp16_transformer)
     torch.onnx.export(
         f5_decode,
         (denoised, ref_signal_len),
@@ -434,6 +450,7 @@ in_name_B3 = in_name_B[3].name
 in_name_B4 = in_name_B[4].name
 in_name_B5 = in_name_B[5].name
 out_name_B0 = out_name_B[0].name
+out_name_B1 = out_name_B[1].name
 
 
 ort_session_C = onnxruntime.InferenceSession(onnx_model_C, sess_options=session_opts, providers=['CPUExecutionProvider'])
@@ -456,6 +473,7 @@ ref_audio_len = audio.shape[-1] // HOP_LENGTH + 1
 max_duration = np.array(ref_audio_len + int(ref_audio_len / ref_text_len * gen_text_len / SPEED), dtype=np.int64)
 gen_text = convert_char_to_pinyin([ref_text + gen_text])
 text_ids = list_str_to_idx(gen_text, vocab_char_map).numpy()
+time_step = np.array([0], dtype=np.int32)
 
 
 print("\n\nRun F5-TTS by ONNX Runtime.")
@@ -468,28 +486,19 @@ noise, rope_cos, rope_sin, cat_mel_text, cat_mel_text_drop, ref_signal_len = ort
             in_name_A2: max_duration
         })
 
-if use_fp16_transformer:
-    noise = noise.astype(np.float16)
-    rope_cos = rope_cos.astype(np.float16)
-    rope_sin = rope_sin.astype(np.float16)
-    cat_mel_text = cat_mel_text.astype(np.float16)
-    cat_mel_text_drop = cat_mel_text_drop.astype(np.float16)
-
-for i in range(NFE_STEP):
-    print(f"NFE_STEP: {i}")
-    noise = ort_session_B.run(
-        [out_name_B0],
+print("NFE_STEP: 0")
+for i in range(0, NFE_STEP, FUSE_NFE):
+    noise, time_step = ort_session_B.run(
+        [out_name_B0, out_name_B1],
         {
             in_name_B0: noise,
             in_name_B1: rope_cos,
             in_name_B2: rope_sin,
             in_name_B3: cat_mel_text,
             in_name_B4: cat_mel_text_drop,
-            in_name_B5: np.array([i], dtype=np.int32)  # time_step
-        })[0]
-
-if use_fp16_transformer:
-    noise = noise.astype(np.float32)
+            in_name_B5: time_step
+        })
+    print(f"NFE_STEP: {i + FUSE_NFE}")
 
 generated_signal = ort_session_C.run(
         [out_name_C0],
