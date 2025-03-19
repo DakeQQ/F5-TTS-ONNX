@@ -25,6 +25,7 @@ ORT_Accelerate_Providers = ['OpenVINOExecutionProvider']  # If you have accelera
                                                           # else keep empty.
 RANDOM_SEED = 9527                                        # Set seed to reproduce the generated audio
 NFE_STEP = 32                                             # F5-TTS model setting
+FUSE_NFE = 1                                              # Keep the same vale as exported model.
 SPEED = 1.0                                               # Set for talking speed. Only works with dynamic_axes=True
 MAX_THREADS = 8                                           # Max CPU parallel threads.
 DEVICE_ID = 0                                             # The GPU id, default to 0.
@@ -169,6 +170,7 @@ in_name_B3 = in_name_B[3].name
 in_name_B4 = in_name_B[4].name
 in_name_B5 = in_name_B[5].name
 out_name_B0 = out_name_B[0].name
+out_name_B1 = out_name_B[1].name
 
 session_opts.graph_optimization_level = onnxruntime.GraphOptimizationLevel.ORT_ENABLE_ALL
 ort_session_C = onnxruntime.InferenceSession(onnx_model_C, sess_options=session_opts, providers=['CPUExecutionProvider'], provider_options=None)
@@ -191,6 +193,7 @@ ref_audio_len = audio_len // HOP_LENGTH + 1
 max_duration = np.array(ref_audio_len + int(ref_audio_len / ref_text_len * gen_text_len / SPEED), dtype=np.int64)
 gen_text = convert_char_to_pinyin([ref_text + gen_text])
 text_ids = list_str_to_idx(gen_text, vocab_char_map).numpy()
+time_step = np.array([0], dtype=np.int32)
 
 print("\n\nRun F5-TTS by ONNX Runtime.")
 start_count = time.time()
@@ -202,25 +205,26 @@ noise, rope_cos, rope_sin, cat_mel_text, cat_mel_text_drop, ref_signal_len = ort
             in_name_A2: max_duration
         })
 
-if 'float16' in model_dtype:
-    noise = noise.astype(np.float16)
-    rope_cos = rope_cos.astype(np.float16)
-    rope_sin = rope_sin.astype(np.float16)
-    cat_mel_text = cat_mel_text.astype(np.float16)
-    cat_mel_text_drop = cat_mel_text_drop.astype(np.float16)
-
 if "CUDAExecutionProvider" in ORT_Accelerate_Providers:
     noise = onnxruntime.OrtValue.ortvalue_from_numpy(noise, 'cuda', DEVICE_ID)
     rope_cos = onnxruntime.OrtValue.ortvalue_from_numpy(rope_cos, 'cuda', DEVICE_ID)
     rope_sin = onnxruntime.OrtValue.ortvalue_from_numpy(rope_sin, 'cuda', DEVICE_ID)
     cat_mel_text = onnxruntime.OrtValue.ortvalue_from_numpy(cat_mel_text, 'cuda', DEVICE_ID)
     cat_mel_text_drop = onnxruntime.OrtValue.ortvalue_from_numpy(cat_mel_text_drop, 'cuda', DEVICE_ID)
+    time_step = onnxruntime.OrtValue.ortvalue_from_numpy(time_step, 'cuda', DEVICE_ID)
 
     inputs = {
+        in_name_B0: (noise.element_type(), noise.data_ptr(), noise.shape()),
         in_name_B1: (rope_cos.element_type(), rope_cos.data_ptr(), rope_cos.shape()),
         in_name_B2: (rope_sin.element_type(), rope_sin.data_ptr(), rope_sin.shape()),
         in_name_B3: (cat_mel_text.element_type(), cat_mel_text.data_ptr(), cat_mel_text.shape()),
         in_name_B4: (cat_mel_text_drop.element_type(), cat_mel_text_drop.data_ptr(), cat_mel_text_drop.shape()),
+        in_name_B5: (time_step.element_type(), time_step.data_ptr(), time_step.shape())
+    }
+
+    outputs = {
+        out_name_B0: (noise.element_type(), noise.data_ptr(), noise.shape()),
+        out_name_B1: (time_step.element_type(), time_step.data_ptr(), time_step.shape()),
     }
 
     io_binding = ort_session_B.io_binding()
@@ -233,46 +237,37 @@ if "CUDAExecutionProvider" in ORT_Accelerate_Providers:
             shape=shape,
             buffer_ptr=buffer_ptr
         )
-    io_binding.bind_output(out_name_B0, 'cuda')
 
-    for i in range(NFE_STEP):
-        print(f"NFE_STEP: {i}")
-        time_step = onnxruntime.OrtValue.ortvalue_from_numpy(np.array([i], dtype=np.int32), 'cuda', DEVICE_ID)
-        io_binding.bind_input(
-            name=in_name_B5,
+    for name, (dtype, buffer_ptr, shape) in outputs.items():
+        io_binding.bind_output(
+            name=name,
             device_type='cuda',
             device_id=DEVICE_ID,
-            element_type=time_step.element_type(),
-            shape=time_step.shape(),
-            buffer_ptr=time_step.data_ptr()
+            element_type=dtype,
+            shape=shape,
+            buffer_ptr=buffer_ptr
         )
-        io_binding.bind_input(
-            name=in_name_B0,
-            device_type='cuda',
-            device_id=DEVICE_ID,
-            element_type=noise.element_type(),
-            shape=noise.shape(),
-            buffer_ptr=noise.data_ptr()
-        )
+
+    print("NFE_STEP: 0")
+    for i in range(0, NFE_STEP, FUSE_NFE):
         ort_session_B.run_with_iobinding(io_binding)
-        noise = io_binding.get_outputs()[0]
-    noise = onnxruntime.OrtValue.numpy(noise)
+        print(f"NFE_STEP: {i + FUSE_NFE}")
+
+    noise = onnxruntime.OrtValue.numpy(io_binding.get_outputs()[0])
 else:
-    for i in range(NFE_STEP):
-        print(f"NFE_STEP: {i}")
-        noise = ort_session_B.run(
-            [out_name_B0],
+    print("NFE_STEP: 0")
+    for i in range(0, NFE_STEP, FUSE_NFE):
+        noise, time_step = ort_session_B.run(
+            [out_name_B0, out_name_B1],
             {
                 in_name_B0: noise,
                 in_name_B1: rope_cos,
                 in_name_B2: rope_sin,
                 in_name_B3: cat_mel_text,
                 in_name_B4: cat_mel_text_drop,
-                in_name_B5: np.array([i], dtype=np.int32)
-            })[0]
-
-if 'float16' in model_dtype:
-    noise = noise.astype(np.float32)
+                in_name_B5: time_step
+            })
+        print(f"NFE_STEP: {i + FUSE_NFE}")
     
 generated_signal = ort_session_C.run(
         [out_name_C0],
