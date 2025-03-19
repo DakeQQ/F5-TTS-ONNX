@@ -43,7 +43,7 @@ ORT_Accelerate_Providers = []           # If you have accelerate devices for : [
 # Model Parameters
 DYNAMIC_AXES = True                     # Default dynamic_axes is input audio length. Note, some providers only work for static axes.
 NFE_STEP = 32                           # F5-TTS model setting
-FUSE_NFE = 1                            # '1' means no fuse. '2' means fuse every 2 NFE steps into one to reduce GPU I/O binding times.
+FUSE_NFE = 1                            # '1' means no fuse. '2' means fuse every 2 NFE steps into one to reduce I/O binding times.
 SAMPLE_RATE = 24000                     # The generated audio sample rate
 CFG_STRENGTH = 2.0                      # F5-TTS model setting
 SWAY_COEFFICIENT = -1.0                 # F5-TTS model setting
