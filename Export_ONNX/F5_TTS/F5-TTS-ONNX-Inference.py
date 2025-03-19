@@ -215,46 +215,37 @@ noise, rope_cos, rope_sin, cat_mel_text, cat_mel_text_drop, ref_signal_len = ort
         })
 
 if device_type != 'others':
-    noise = onnxruntime.OrtValue.ortvalue_from_numpy(noise, device_type, DEVICE_ID)
-    rope_cos = onnxruntime.OrtValue.ortvalue_from_numpy(rope_cos, device_type, DEVICE_ID)
-    rope_sin = onnxruntime.OrtValue.ortvalue_from_numpy(rope_sin, device_type, DEVICE_ID)
-    cat_mel_text = onnxruntime.OrtValue.ortvalue_from_numpy(cat_mel_text, device_type, DEVICE_ID)
-    cat_mel_text_drop = onnxruntime.OrtValue.ortvalue_from_numpy(cat_mel_text_drop, device_type, DEVICE_ID)
-    time_step = onnxruntime.OrtValue.ortvalue_from_numpy(time_step, device_type, DEVICE_ID)
-
-    inputs = {
-        in_name_B0: (noise.element_type(), noise.data_ptr(), noise.shape()),
-        in_name_B1: (rope_cos.element_type(), rope_cos.data_ptr(), rope_cos.shape()),
-        in_name_B2: (rope_sin.element_type(), rope_sin.data_ptr(), rope_sin.shape()),
-        in_name_B3: (cat_mel_text.element_type(), cat_mel_text.data_ptr(), cat_mel_text.shape()),
-        in_name_B4: (cat_mel_text_drop.element_type(), cat_mel_text_drop.data_ptr(), cat_mel_text_drop.shape()),
-        in_name_B5: (time_step.element_type(), time_step.data_ptr(), time_step.shape())
-    }
-
-    outputs = {
-        out_name_B0: (noise.element_type(), noise.data_ptr(), noise.shape()),
-        out_name_B1: (time_step.element_type(), time_step.data_ptr(), time_step.shape()),
-    }
+    inputs = [
+        onnxruntime.OrtValue.ortvalue_from_numpy(noise, device_type, DEVICE_ID),
+        onnxruntime.OrtValue.ortvalue_from_numpy(rope_cos, device_type, DEVICE_ID),
+        onnxruntime.OrtValue.ortvalue_from_numpy(rope_sin, device_type, DEVICE_ID),
+        onnxruntime.OrtValue.ortvalue_from_numpy(cat_mel_text, device_type, DEVICE_ID),
+        onnxruntime.OrtValue.ortvalue_from_numpy(cat_mel_text_drop, device_type, DEVICE_ID),
+        onnxruntime.OrtValue.ortvalue_from_numpy(time_step, device_type, DEVICE_ID)
+    ]
+    outputs = [
+        inputs[0],
+        inputs[-1]
+    ]
 
     io_binding = ort_session_B.io_binding()
-    for name, (dtype, buffer_ptr, shape) in inputs.items():
+    for i in range(len(inputs)):
         io_binding.bind_input(
-            name=name,
+            name=in_name_B[i].name,
             device_type=device_type,
             device_id=DEVICE_ID,
-            element_type=dtype,
-            shape=shape,
-            buffer_ptr=buffer_ptr
+            element_type=inputs[i].element_type(),
+            shape=inputs[i].shape(),
+            buffer_ptr=inputs[i].data_ptr()
         )
-
-    for name, (dtype, buffer_ptr, shape) in outputs.items():
+    for i in range(len(outputs)):
         io_binding.bind_output(
-            name=name,
+            name=out_name_B[i].name,
             device_type=device_type,
             device_id=DEVICE_ID,
-            element_type=dtype,
-            shape=shape,
-            buffer_ptr=buffer_ptr
+            element_type=outputs[i].element_type(),
+            shape=outputs[i].shape(),
+            buffer_ptr=outputs[i].data_ptr()
         )
 
     print("NFE_STEP: 0")
