@@ -58,7 +58,7 @@ elif "CUDAExecutionProvider" in ORT_Accelerate_Providers:
         }
     ]
 else:
-    # PLease config by yourself for others providers.
+    # Please config by yourself for others providers.
     provider_options = None
 
 
