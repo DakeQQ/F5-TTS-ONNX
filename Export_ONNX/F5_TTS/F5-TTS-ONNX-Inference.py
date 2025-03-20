@@ -197,7 +197,7 @@ time_step = np.array([0], dtype=np.int32)
 
 if "CPUExecutionProvider" in ORT_Accelerate_Providers or not ORT_Accelerate_Providers:
     device_type = 'cpu'
-if "CUDAExecutionProvider" in ORT_Accelerate_Providers or "TensorrtExecutionProvider" in ORT_Accelerate_Providers:
+elif "CUDAExecutionProvider" in ORT_Accelerate_Providers or "TensorrtExecutionProvider" in ORT_Accelerate_Providers:
     device_type = 'cuda'
 elif "DmlExecutionProvider" in ORT_Accelerate_Providers:
     device_type = 'dml'
