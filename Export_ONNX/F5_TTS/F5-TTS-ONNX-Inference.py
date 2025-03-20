@@ -154,7 +154,8 @@ out_name_A3 = out_name_A[3].name
 out_name_A4 = out_name_A[4].name
 out_name_A5 = out_name_A[5].name
 
-session_opts.graph_optimization_level = onnxruntime.GraphOptimizationLevel.ORT_ENABLE_BASIC
+if "CPUExecutionProvider" not in ORT_Accelerate_Providers:
+  session_opts.graph_optimization_level = onnxruntime.GraphOptimizationLevel.ORT_ENABLE_BASIC
 ort_session_B = onnxruntime.InferenceSession(onnx_model_B, sess_options=session_opts, providers=ORT_Accelerate_Providers, provider_options=provider_options)
 # For Windows DirectML + Intel/AMD/Nvidia GPU,
 # pip install onnxruntime-directml --upgrade
