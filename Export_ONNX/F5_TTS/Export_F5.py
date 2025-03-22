@@ -130,8 +130,8 @@ class F5Preprocess(torch.nn.Module):
         zeros_split_B = zeros[:, :-text_ids.shape[-1], 0]
         mel_signal = torch.cat((mel_signal, zeros_split_A.to(mel_signal.dtype)), dim=1)
         noise = torch.randn((1, max_duration, self.num_channels), dtype=torch.float32)
-        rope_cos = self.rope_cos[:, :, :max_duration, :]
-        rope_sin = self.rope_sin[:, :, :max_duration, :]
+        rope_cos = self.rope_cos[:, :, :max_duration]
+        rope_sin = self.rope_sin[:, :, :max_duration]
         text, text_drop = self.f5_text_embed(torch.cat((text_ids + 1, zeros_split_B.to(text_ids.dtype)), dim=-1), max_duration)
         cat_mel_text = torch.cat((mel_signal, text), dim=-1)
         cat_mel_text_drop = torch.cat((zeros.to(text_drop.dtype), text_drop), dim=-1)
