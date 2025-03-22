@@ -159,10 +159,11 @@ if "CPUExecutionProvider" in ORT_Accelerate_Providers or not ORT_Accelerate_Prov
 else:
     session_opts.graph_optimization_level = onnxruntime.GraphOptimizationLevel.ORT_ENABLE_BASIC
 ort_session_B = onnxruntime.InferenceSession(onnx_model_B, sess_options=session_opts, providers=ORT_Accelerate_Providers, provider_options=provider_options)
+ORT_Accelerate_Providers = ort_session_B.get_providers()[0]
 # For Windows DirectML + Intel/AMD/Nvidia GPU,
 # pip install onnxruntime-directml --upgrade
 # ort_session_B = onnxruntime.InferenceSession(onnx_model_B, sess_options=session_opts, providers=['DmlExecutionProvider'])
-print(f"\nUsable Providers: {ort_session_B.get_providers()}")
+print(f"\nUsable Providers: {ORT_Accelerate_Providers}")
 model_dtype = ort_session_B._inputs_meta[0].type
 in_name_B = ort_session_B.get_inputs()
 out_name_B = ort_session_B.get_outputs()
