@@ -64,7 +64,7 @@ Run **F5-TTS** using ONNX Runtime for efficient and flexible text-to-speech proc
       - [F5_TTS_Faster](https://github.com/WGS-note/F5_TTS_Faster)
 
 6. **Download**
-   - [Link](https://drive.google.com/drive/folders/1NxvDDDU0VmcySbbknfaUG5Aj5NH7qUBX?usp=drive_link)
+   - [Link](https://huggingface.co/H5N1AIDS/F5-TTS-ONNX/tree/main)
 
 ### Learn More  
 - Explore more related projects and resources:  
@@ -137,7 +137,7 @@ Run **F5-TTS** using ONNX Runtime for efficient and flexible text-to-speech proc
       - [F5_TTS_Faster](https://github.com/WGS-note/F5_TTS_Faster)
 
 6. **Download**
-   - [Link](https://drive.google.com/drive/folders/1NxvDDDU0VmcySbbknfaUG5Aj5NH7qUBX?usp=drive_link)
+   - [Link](https://huggingface.co/H5N1AIDS/F5-TTS-ONNX/tree/main)
 
 ### 了解更多  
 - 探索更多相关项目和资源：  
