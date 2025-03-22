@@ -11,9 +11,9 @@ from pypinyin import lazy_pinyin, Style
 python_package_path = site.getsitepackages()[-1]
 
 vocab_path           = "/home/DakeQQ/Downloads/F5TTS_v1_Base/vocab.txt"                             # The F5-TTS model vocab download path.     URL: https://huggingface.co/SWivid/F5-TTS/tree/main/F5TTS_v1_Base
-onnx_model_A         = "/home/DakeQQ/Downloads/F5_Optimized/F5_Preprocess.ort"                      # The exported onnx model path.
+onnx_model_A         = "/home/DakeQQ/Downloads/F5_Optimized/F5_Preprocess.onnx"                     # The exported onnx model path.
 onnx_model_B         = "/home/DakeQQ/Downloads/F5_Optimized/F5_Transformer.onnx"                    # The exported onnx model path.
-onnx_model_C         = "/home/DakeQQ/Downloads/F5_Optimized/F5_Decode.ort"                          # The exported onnx model path.
+onnx_model_C         = "/home/DakeQQ/Downloads/F5_Optimized/F5_Decode.onnx"                         # The exported onnx model path.
 
 reference_audio      = python_package_path + "/f5_tts/infer/examples/basic/basic_ref_zh.wav"        # The reference audio path.
 generated_audio      = "generated.wav"                                                              # The generated audio path.
