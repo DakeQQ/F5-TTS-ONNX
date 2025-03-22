@@ -109,8 +109,7 @@ class F5Preprocess(torch.nn.Module):
         freqs = torch.outer(torch.arange(MAX_SIGNAL_LENGTH, dtype=torch.float32), inv_freq) / self.interpolation_factor
         freqs = freqs.repeat_interleave(2, dim=-1).unsqueeze(0).unsqueeze(0).repeat(2, num_head, 1, 1)
         self.fbank = (torchaudio.functional.melscale_fbanks(nfft // 2 + 1, 0, sample_rate // 2, n_mels, sample_rate, None, 'htk')).transpose(0, 1).unsqueeze(0)
-        self.zeros_A = torch.zeros((1, MAX_SIGNAL_LENGTH, self.num_channels), dtype=torch.int8)
-        self.zeros_B = torch.zeros((1, MAX_SIGNAL_LENGTH), dtype=torch.int8)
+        self.zeros = torch.zeros((1, MAX_SIGNAL_LENGTH, self.num_channels), dtype=torch.int8)
         self.rope_cos = freqs.cos().half()
         self.rope_sin = freqs.sin().half()
         self.inv_int16 = float(1.0 / 32768.0)
@@ -126,15 +125,16 @@ class F5Preprocess(torch.nn.Module):
         mel_signal_real, mel_signal_imag = self.custom_stft(audio, 'reflect')
         mel_signal = torch.matmul(self.fbank, torch.sqrt(mel_signal_real * mel_signal_real + mel_signal_imag * mel_signal_imag)).transpose(1, 2).clamp(min=1e-5).log()
         ref_signal_len = mel_signal.shape[1]
-        zeros_A = self.zeros_A[:, :max_duration]
-        zeros_A_split = zeros_A[:, :-ref_signal_len]
-        mel_signal = torch.cat((mel_signal, zeros_A_split.to(mel_signal.dtype)), dim=1)
+        zeros = self.zeros[:, :max_duration]
+        zeros_split_A = zeros[:, :-ref_signal_len]
+        zeros_split_B = zeros[:, :-text_ids.shape[-1], 0]
+        mel_signal = torch.cat((mel_signal, zeros_split_A.to(mel_signal.dtype)), dim=1)
         noise = torch.randn((1, max_duration, self.num_channels), dtype=torch.float32)
-        rope_cos = self.rope_cos[:, :, :max_duration]
-        rope_sin = self.rope_sin[:, :, :max_duration]
-        text, text_drop = self.f5_text_embed(torch.cat((text_ids + 1, self.zeros_B[:, :(max_duration - text_ids.shape[-1])].to(text_ids.dtype)), dim=-1), max_duration)
+        rope_cos = self.rope_cos[:, :, :max_duration, :]
+        rope_sin = self.rope_sin[:, :, :max_duration, :]
+        text, text_drop = self.f5_text_embed(torch.cat((text_ids + 1, zeros_split_B.to(text_ids.dtype)), dim=-1), max_duration)
         cat_mel_text = torch.cat((mel_signal, text), dim=-1)
-        cat_mel_text_drop = torch.cat((zeros_A.to(text_drop.dtype), text_drop), dim=-1)
+        cat_mel_text_drop = torch.cat((zeros.to(text_drop.dtype), text_drop), dim=-1)
         if self.use_fp16:
             return noise.half(), rope_cos, rope_sin, cat_mel_text.half(), cat_mel_text_drop.half(), ref_signal_len
         return noise, rope_cos.float(), rope_sin.float(), cat_mel_text, cat_mel_text_drop, ref_signal_len
