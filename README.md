@@ -1,3 +1,4 @@
+
 ---
 
 ## F5-TTS-ONNX  
@@ -60,7 +61,6 @@ Run **F5-TTS** using ONNX Runtime for efficient and flexible text-to-speech proc
 
 5. **NVIDIA TensorRT Support**:  
    - For NVIDIA GPU optimization with TensorRT, visit:  
-      - [F5-TTS-TRT](https://github.com/Bigfishering/f5-tts-trtllm/tree/main)
       - [F5_TTS_Faster](https://github.com/WGS-note/F5_TTS_Faster)
 
 6. **Download**
@@ -133,7 +133,6 @@ Run **F5-TTS** using ONNX Runtime for efficient and flexible text-to-speech proc
 
 5. **支持 NVIDIA TensorRT**：  
    - 针对 NVIDIA GPU 的 TensorRT 优化，请访问：  
-      - [F5-TTS-TRT](https://github.com/Bigfishering/f5-tts-trtllm/tree/main)
       - [F5_TTS_Faster](https://github.com/WGS-note/F5_TTS_Faster)
 
 6. **Download**
