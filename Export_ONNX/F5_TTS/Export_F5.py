@@ -133,7 +133,7 @@ class F5Preprocess(torch.nn.Module):
         rope_sin = self.rope_sin[:, :, :max_duration]
         text, text_drop = self.f5_text_embed(torch.cat((text_ids + 1, zeros_split_B.to(text_ids.dtype)), dim=-1), max_duration)
         cat_mel_text = torch.cat((mel_signal, text), dim=-1)
-        cat_mel_text_drop = torch.cat((torch.zeros((1, max_duration, self.num_channels), dtype=torch.float32), text_drop), dim=-1)
+        cat_mel_text_drop = torch.cat((zeros, text_drop), dim=-1)
         if self.use_fp16:
             return noise.half(), rope_cos, rope_sin, cat_mel_text.half(), cat_mel_text_drop.half(), ref_signal_len
         return noise, rope_cos.float(), rope_sin.float(), cat_mel_text, cat_mel_text_drop, ref_signal_len
