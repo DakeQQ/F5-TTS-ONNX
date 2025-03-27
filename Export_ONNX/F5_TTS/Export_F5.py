@@ -131,7 +131,7 @@ class F5Preprocess(torch.nn.Module):
         noise = torch.randn_like(zeros)
         rope_cos = self.rope_cos[:, :, :max_duration]
         rope_sin = self.rope_sin[:, :, :max_duration]
-        text, text_drop = self.f5_text_embed(torch.cat((text_ids + 1, zeros_split_B.to(text_ids.dtype)), dim=-1), max_duration)
+        text, text_drop = self.f5_text_embed(torch.cat((text_ids + 1, zeros_split_B.to(text_ids.dtype)), dim=-1), max_duration[0])
         cat_mel_text = torch.cat((mel_signal, text), dim=-1)
         cat_mel_text_drop = torch.cat((zeros, text_drop), dim=-1)
         if self.use_fp16:
@@ -172,7 +172,7 @@ class F5Transformer(torch.nn.Module):
                 ):
         for nfe in range(self.fuse_step):
             pred = self.f5_transformer(x=noise, cond=cat_mel_text, cond_drop=cat_mel_text_drop, time=self.time_expand[time_step], rope_cos=rope_cos, rope_sin=rope_sin)
-            pred, pred1 = pred.chunk(2, dim=0)
+            pred, pred1 = torch.split(pred, [1, 1], dim=0)
             noise += (pred + (pred - pred1) * self.cfg_strength) * self.delta_t[time_step]
             time_step += 1
         return noise, time_step
@@ -278,7 +278,7 @@ with torch.inference_mode():
     # Dummy for Export the F5_Preprocess part
     audio = torch.ones((1, 1, AUDIO_LENGTH), dtype=torch.int16)
     text_ids = torch.ones((1, TEXT_IDS_LENGTH), dtype=torch.int32)
-    max_duration = torch.tensor(MAX_DURATION, dtype=torch.long)
+    max_duration = torch.tensor([MAX_DURATION], dtype=torch.long)
     f5_model, NUM_HEAD, HIDDEN_SIZE = load_model(F5_safetensors_path)
     HEAD_DIM = HIDDEN_SIZE // NUM_HEAD
     custom_stft = STFT_Process(model_type='stft_B', n_fft=NFFT, hop_len=HOP_LENGTH, max_frames=0, window_type=WINDOW_TYPE).eval()
@@ -473,7 +473,7 @@ zh_pause_punc = r"。，、；：？！"
 ref_text_len = len(ref_text.encode('utf-8')) + 3 * len(re.findall(zh_pause_punc, ref_text))
 gen_text_len = len(gen_text.encode('utf-8')) + 3 * len(re.findall(zh_pause_punc, gen_text))
 ref_audio_len = audio.shape[-1] // HOP_LENGTH + 1
-max_duration = np.array(ref_audio_len + int(ref_audio_len / ref_text_len * gen_text_len / SPEED), dtype=np.int64)
+max_duration = np.array([ref_audio_len + int(ref_audio_len / ref_text_len * gen_text_len / SPEED)], dtype=np.int64)
 gen_text = convert_char_to_pinyin([ref_text + gen_text])
 text_ids = list_str_to_idx(gen_text, vocab_char_map).numpy()
 time_step = np.array([0], dtype=np.int32)
