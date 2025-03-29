@@ -14,6 +14,7 @@ vocab_path           = "/home/DakeQQ/Downloads/F5TTS_v1_Base/vocab.txt"         
 onnx_model_A         = "/home/DakeQQ/Downloads/F5_Optimized/F5_Preprocess.onnx"                     # The exported onnx model path.
 onnx_model_B         = "/home/DakeQQ/Downloads/F5_Optimized/F5_Transformer.onnx"                    # The exported onnx model path.
 onnx_model_C         = "/home/DakeQQ/Downloads/F5_Optimized/F5_Decode.onnx"                         # The exported onnx model path.
+generated_audio      = "./generated_audio.wav"
 test_in_english = False
 
 if test_in_english:
