@@ -212,7 +212,7 @@ elif "CUDAExecutionProvider" in ORT_Accelerate_Providers or "TensorrtExecutionPr
 elif "DmlExecutionProvider" in ORT_Accelerate_Providers:
     device_type = 'dml'
 else:
-    device_type = 'others'
+    device_type = None
 
 print("\n\nRun F5-TTS by ONNX Runtime.")
 start_count = time.time()
@@ -224,7 +224,7 @@ noise, rope_cos, rope_sin, cat_mel_text, cat_mel_text_drop, ref_signal_len = ort
             in_name_A2: max_duration
         })
 
-if device_type != 'others':
+if device_type:
     inputs = [
         onnxruntime.OrtValue.ortvalue_from_numpy(noise, device_type, DEVICE_ID),
         onnxruntime.OrtValue.ortvalue_from_numpy(rope_cos, device_type, DEVICE_ID),
