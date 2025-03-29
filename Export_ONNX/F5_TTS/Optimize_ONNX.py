@@ -37,7 +37,7 @@ target_platform = "amd64"                                                       
 slim(
     model=model_path,
     output_model=optimized_model_path,
-    no_shape_infer=False,                        # True for more optimize but may get errors.
+    no_shape_infer=True if 'F5_Preprocess' in model_path else False,                    # False for more optimize but may get errors.
     skip_fusion_patterns=False,
     no_constant_folding=False,
     save_as_external_data=False,
@@ -64,7 +64,7 @@ if provider != "OpenVINOExecutionProvider":
 slim(
     model=optimized_model_path,
     output_model=optimized_model_path,
-    no_shape_infer=False,                       # True for more optimize but may get errors.
+    no_shape_infer=True if 'F5_Preprocess' in model_path else False,                    # False for more optimize but may get errors.
     skip_fusion_patterns=False,
     no_constant_folding=False,
     save_as_external_data=False,
@@ -75,11 +75,11 @@ slim(
 
 if not use_gpu_fp16:
     # Upgrade the Opset version. (optional process)
-    model = onnx.load(optimized_model_path)
-    model = onnx.version_converter.convert_version(model, 21)
-    onnx.save(model, optimized_model_path, save_as_external_data=False)
-    del model
-    gc.collect()
+    # model = onnx.load(optimized_model_path)
+    # model = onnx.version_converter.convert_version(model, 21)
+    # onnx.save(model, optimized_model_path, save_as_external_data=False)
+    # del model
+    # gc.collect()
 
     # Convert the simplified model to ORT format.
     if provider != "OpenVINOExecutionProvider":
