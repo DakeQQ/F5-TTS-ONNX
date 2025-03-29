@@ -148,7 +148,7 @@ class F5Transformer(torch.nn.Module):
         self.time_mlp_dim = 1024
         self.cfg_strength = cfg
         self.sway_sampling_coef = sway_coef
-        t = torch.linspace(0, 1, steps + 1, dtype=torch.float32)
+        t = torch.linspace(0, 1, steps + steps + 1, dtype=torch.float32)  # Slightly larger than NFE_STEPS
         time_step = t + self.sway_sampling_coef * (torch.cos(torch.pi * 0.5 * t) - 1 + t)
         self.delta_t = torch.diff(time_step).to(dtype)
         self.time_expand = torch.zeros((steps, self.time_mlp_dim), dtype=torch.float32)
