@@ -14,14 +14,19 @@ vocab_path           = "/home/DakeQQ/Downloads/F5TTS_v1_Base/vocab.txt"         
 onnx_model_A         = "/home/DakeQQ/Downloads/F5_Optimized/F5_Preprocess.onnx"                     # The exported onnx model path.
 onnx_model_B         = "/home/DakeQQ/Downloads/F5_Optimized/F5_Transformer.onnx"                    # The exported onnx model path.
 onnx_model_C         = "/home/DakeQQ/Downloads/F5_Optimized/F5_Decode.onnx"                         # The exported onnx model path.
+test_in_english = False
 
-reference_audio      = python_package_path + "/f5_tts/infer/examples/basic/basic_ref_zh.wav"        # The reference audio path.
-generated_audio      = "generated.wav"                                                              # The generated audio path.
-ref_text             = "对，这就是我，万人敬仰的太乙真人。"                                               # The ASR result of reference audio.
-gen_text             = "对，这就是我，万人敬仰的大可奇奇。"                                               # The target TTS.
+if test_in_english:
+    reference_audio  = python_package_path + "/f5_tts/infer/examples/basic/basic_ref_en.wav"
+    ref_text         = "Some call me nature, others call me mother nature."
+    gen_text         = "Some call me Dake, others call me QQ."
+else:
+    reference_audio  = python_package_path + "/f5_tts/infer/examples/basic/basic_ref_zh.wav"        # The reference audio path.
+    ref_text         = "对，这就是我，万人敬仰的太乙真人。"                                               # The ASR result of reference audio.
+    gen_text         = "对，这就是我，万人敬仰的大可奇奇。"                                               # The target TTS.
 
 
-ORT_Accelerate_Providers = ['OpenVINOExecutionProvider']  # If you have accelerate devices for : ['CUDAExecutionProvider', 'TensorrtExecutionProvider', 'CoreMLExecutionProvider', 'DmlExecutionProvider', 'OpenVINOExecutionProvider', 'ROCMExecutionProvider', 'MIGraphXExecutionProvider', 'AzureExecutionProvider']
+ORT_Accelerate_Providers = ['CPUExecutionProvider']       # If you have accelerate devices for : ['CUDAExecutionProvider', 'TensorrtExecutionProvider', 'CoreMLExecutionProvider', 'DmlExecutionProvider', 'OpenVINOExecutionProvider', 'ROCMExecutionProvider', 'MIGraphXExecutionProvider', 'AzureExecutionProvider']
                                                           # else keep empty.
 RANDOM_SEED = 9527                                        # Set seed to reproduce the generated audio
 NFE_STEP = 32                                             # F5-TTS model setting
