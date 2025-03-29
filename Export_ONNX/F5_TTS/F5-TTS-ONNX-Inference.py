@@ -240,22 +240,14 @@ if device_type != 'others':
 
     io_binding = ort_session_B.io_binding()
     for i in range(len(inputs)):
-        io_binding.bind_input(
+        io_binding.bind_ortvalue_input(
             name=in_name_B[i].name,
-            device_type=device_type,
-            device_id=DEVICE_ID,
-            element_type=inputs[i].element_type(),
-            shape=inputs[i].shape(),
-            buffer_ptr=inputs[i].data_ptr()
+            ortvalue=inputs[i]
         )
     for i in range(len(outputs)):
-        io_binding.bind_output(
+        io_binding.bind_ortvalue_output(
             name=out_name_B[i].name,
-            device_type=device_type,
-            device_id=DEVICE_ID,
-            element_type=outputs[i].element_type(),
-            shape=outputs[i].shape(),
-            buffer_ptr=outputs[i].data_ptr()
+            ortvalue=outputs[i]
         )
 
     print("NFE_STEP: 0")
