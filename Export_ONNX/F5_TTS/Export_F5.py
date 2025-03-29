@@ -56,7 +56,7 @@ HOP_LENGTH = 256                        # Number of samples between successive f
 N_MELS = 100                            # Number of Mel bands to generate in the Mel-spectrogram
 NFFT = 1024                             # Number of FFT components for the STFT process
 WINDOW_TYPE = 'kaiser'                  # Type of window function used in the STFT
-MAX_SIGNAL_LENGTH = 2560                # Max frames for audio length after STFT processed. Set an appropriate larger value for long audio input, such as 4096.
+MAX_SIGNAL_LENGTH = 4096                # Max frames for audio length after STFT processed. Set an appropriate larger value for long audio input, such as 4096.
 
 # Setting for Static Axes using
 AUDIO_LENGTH = 160000                   # Set for static axes export. Length of audio input signal in samples
@@ -295,8 +295,8 @@ with torch.inference_mode():
             'noise': {1: 'max_duration'},
             'rope_cos': {2: 'max_duration'},
             'rope_sin': {2: 'max_duration'},
-            'cat_mel_text': {1: 'max_duration', 2: 'text_embed_len'},
-            'cat_mel_text_drop': {1: 'max_duration',  2: 'text_embed_len'}
+            'cat_mel_text': {1: 'max_duration'},
+            'cat_mel_text_drop': {1: 'max_duration'}
         } if DYNAMIC_AXES else None,
         do_constant_folding=True,
         opset_version=17)
@@ -348,8 +348,8 @@ with torch.inference_mode():
             'noise': {1: 'max_duration'},
             'rope_cos': {2: 'max_duration'},
             'rope_sin': {2: 'max_duration'},
-            'cat_mel_text': {1: 'max_duration', 2: 'text_embed_len'},
-            'cat_mel_text_drop': {1: 'max_duration',  2: 'text_embed_len'},
+            'cat_mel_text': {1: 'max_duration'},
+            'cat_mel_text_drop': {1: 'max_duration'},
             'denoised': {1: 'max_duration'}
         } if DYNAMIC_AXES else None,
         do_constant_folding=True,
@@ -515,3 +515,4 @@ end_count = time.time()
 sf.write(generated_audio, generated_signal.reshape(-1), SAMPLE_RATE, format='WAVEX')
 
 print(f"\nAudio generation is complete.\n\nONNXRuntime Time Cost in Seconds:\n{end_count - start_count:.3f}")
+
