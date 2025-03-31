@@ -192,7 +192,7 @@ out_name_C0 = out_name_C[0].name
 
 # Load the input audio
 print(f"\nReference Audio: {reference_audio}")
-audio = np.array(AudioSegment.from_file(reference_audio).set_channels(1).set_frame_rate(MODEL_SAMPLE_RATE).get_array_of_samples())
+audio = np.array(AudioSegment.from_file(reference_audio).set_channels(1).set_frame_rate(MODEL_SAMPLE_RATE).get_array_of_samples(), dtype=np.int16)
 audio_len = len(audio)
 audio = audio.reshape(1, 1, -1)
 
