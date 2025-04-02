@@ -5,7 +5,8 @@
 Run **F5-TTS** using ONNX Runtime for efficient and flexible text-to-speech processing.
 
 ### Updates  
-- 2025/3/29: It currently support the latest [**SWivid/F5-TTS - v1.08**](https://github.com/SWivid/F5-TTS). Please `pip install f5-tts --upgrade` first.
+- 2025/4/2: Reduce the use of 24 instances of `transpose()` and more than 100 instances of `unsqueeze()` operators. The number of transformers nodes is approximately 1281, all of which can be placed on non-CPU providers.
+- 2025/3/29: It currently support the latest [**SWivid/F5-TTS - v1.08**](https://github.com/SWivid/F5-TTS). Please `pip install f5-tts --upgrade` first. 
 - 2025/3/05: The issue of silence output when using float16 has now been resolved. Please set `use_fp16_transformer = True  # (Export_F5.py, Line: 21)` before export.
 - 2025/3/01: [endink](https://github.com/endink) Add a Windows one-key export script to facilitate the use of Windows integration users. The script will automatically install dependencies. Usage:
   ```
