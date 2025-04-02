@@ -129,14 +129,16 @@ class F5Preprocess(torch.nn.Module):
         zeros_split_B = zeros[:, :-text_ids.shape[-1], 0]
         mel_signal = torch.cat((mel_signal, zeros_split_A), dim=1)
         noise = torch.randn_like(zeros)
-        rope_cos = self.rope_cos[:, :, :max_duration]
-        rope_sin = self.rope_sin[:, :, :max_duration]
+        rope_cos_q = self.rope_cos[:, :, :max_duration]
+        rope_sin_q = self.rope_sin[:, :, :max_duration]
+        rope_cos_k = rope_cos_q.transpose(-1, -2)
+        rope_sin_k = rope_sin_q.transpose(-1, -2)
         text, text_drop = self.f5_text_embed(torch.cat((text_ids + 1, zeros_split_B.to(text_ids.dtype)), dim=-1), max_duration[0])
         cat_mel_text = torch.cat((mel_signal, text), dim=-1)
         cat_mel_text_drop = torch.cat((zeros, text_drop), dim=-1)
         if self.use_fp16:
-            return noise.half(), rope_cos, rope_sin, cat_mel_text.half(), cat_mel_text_drop.half(), ref_signal_len
-        return noise, rope_cos.float(), rope_sin.float(), cat_mel_text, cat_mel_text_drop, ref_signal_len
+            return noise.half(), rope_cos_q, rope_sin_q, rope_cos_k, rope_sin_k, cat_mel_text.half(), cat_mel_text_drop.half(), ref_signal_len
+        return noise, rope_cos_q.float(), rope_sin_q.float(), rope_cos_k.float(), rope_sin_k.float(), cat_mel_text, cat_mel_text_drop, ref_signal_len
 
 
 class F5Transformer(torch.nn.Module):
@@ -151,11 +153,11 @@ class F5Transformer(torch.nn.Module):
         t = torch.linspace(0, 1, steps, dtype=torch.float32)
         time_step = t + self.sway_sampling_coef * (torch.cos(torch.pi * 0.5 * t) - 1 + t)
         self.delta_t = torch.diff(time_step).to(dtype)
-        self.time_expand = torch.zeros((steps, self.time_mlp_dim), dtype=torch.float32)
+        self.time_expand = torch.zeros((len(time_step), self.time_mlp_dim), dtype=torch.float32)
         half_dim = self.freq_embed_dim // 2
         emb_factor = math.log(10000) / (half_dim - 1)
         emb_factor = 1000.0 * torch.exp(torch.arange(half_dim, dtype=torch.float32) * -emb_factor)
-        for i in range(steps):
+        for i in range(len(time_step)):
             emb = time_step[i] * emb_factor
             emb = torch.cat((emb.sin(), emb.cos()), dim=-1)
             self.time_expand[[i], :] = self.time_mlp(emb)
@@ -164,14 +166,16 @@ class F5Transformer(torch.nn.Module):
 
     def forward(self,
                 noise: torch.FloatTensor,
-                rope_cos: torch.FloatTensor,
-                rope_sin: torch.FloatTensor,
+                rope_cos_q: torch.FloatTensor,
+                rope_sin_q: torch.FloatTensor,
+                rope_cos_k: torch.FloatTensor,
+                rope_sin_k: torch.FloatTensor,
                 cat_mel_text: torch.FloatTensor,
                 cat_mel_text_drop: torch.FloatTensor,
                 time_step: torch.IntTensor
                 ):
         for nfe in range(self.fuse_step):
-            pred = self.f5_transformer(x=noise, cond=cat_mel_text, cond_drop=cat_mel_text_drop, time=self.time_expand[time_step], rope_cos=rope_cos, rope_sin=rope_sin)
+            pred = self.f5_transformer(x=noise, cond=cat_mel_text, cond_drop=cat_mel_text_drop, time=self.time_expand[time_step], rope_cos_q=rope_cos_q, rope_sin_q=rope_sin_q, rope_cos_k=rope_cos_k, rope_sin_k=rope_sin_k)
             pred, pred1 = torch.split(pred, [1, 1], dim=0)
             noise += (pred + (pred - pred1) * self.cfg_strength) * self.delta_t[time_step]
             time_step += 1
@@ -294,13 +298,15 @@ with torch.inference_mode():
         (audio, text_ids, max_duration),
         onnx_model_A,
         input_names=['audio', 'text_ids', 'max_duration'],
-        output_names=['noise', 'rope_cos', 'rope_sin', 'cat_mel_text', 'cat_mel_text_drop', 'ref_signal_len'],
+        output_names=['noise', 'rope_cos_q', 'rope_sin_q', 'rope_cos_k', 'rope_sin_k', 'cat_mel_text', 'cat_mel_text_drop', 'ref_signal_len'],
         dynamic_axes={
             'audio': {2: 'audio_len'},
             'text_ids': {1: 'text_ids_len'},
             'noise': {1: 'max_duration'},
-            'rope_cos': {2: 'max_duration'},
-            'rope_sin': {2: 'max_duration'},
+            'rope_cos_q': {2: 'max_duration'},
+            'rope_sin_q': {2: 'max_duration'},
+            'rope_cos_k': {3: 'max_duration'},
+            'rope_sin_k': {3: 'max_duration'},
             'cat_mel_text': {1: 'max_duration'},
             'cat_mel_text_drop': {1: 'max_duration'}
         } if DYNAMIC_AXES else None,
@@ -332,8 +338,10 @@ with torch.inference_mode():
         f5_model.transformer.transformer_blocks._modules[f'{i}'].attn.to_k.bias.data *= scale_factor
 
     noise = torch.ones((1, MAX_DURATION, N_MELS), dtype=dtype)
-    rope_cos = torch.ones((2, NUM_HEAD, MAX_DURATION, HEAD_DIM), dtype=dtype)
-    rope_sin = torch.ones((2, NUM_HEAD, MAX_DURATION, HEAD_DIM), dtype=dtype)
+    rope_cos_q = torch.ones((2, NUM_HEAD, MAX_DURATION, HEAD_DIM), dtype=dtype)
+    rope_sin_q = torch.ones((2, NUM_HEAD, MAX_DURATION, HEAD_DIM), dtype=dtype)
+    rope_cos_k = rope_cos_q.transpose(-1, -2)
+    rope_sin_k = rope_sin_q.transpose(-1, -2)
     cat_mel_text = torch.ones((1, MAX_DURATION, TEXT_EMBED_LENGTH), dtype=dtype)
     cat_mel_text_drop = torch.ones((1, MAX_DURATION, TEXT_EMBED_LENGTH), dtype=dtype)
     time_step = torch.tensor([0], dtype=torch.int32)
@@ -346,14 +354,16 @@ with torch.inference_mode():
         f5_transformer = f5_transformer.half()
     torch.onnx.export(
         f5_transformer,
-        (noise, rope_cos, rope_sin, cat_mel_text, cat_mel_text_drop, time_step),
+        (noise, rope_cos_q, rope_sin_q, rope_cos_k, rope_sin_k, cat_mel_text, cat_mel_text_drop, time_step),
         onnx_model_B,
-        input_names=['noise', 'rope_cos', 'rope_sin', 'cat_mel_text', 'cat_mel_text_drop', 'time_step'],
+        input_names=['noise', 'rope_cos_q', 'rope_sin_q', 'rope_cos_k', 'rope_sin_k', 'cat_mel_text', 'cat_mel_text_drop', 'time_step'],
         output_names=['denoised', 'time_step'],
         dynamic_axes={
             'noise': {1: 'max_duration'},
-            'rope_cos': {2: 'max_duration'},
-            'rope_sin': {2: 'max_duration'},
+            'rope_cos_q': {2: 'max_duration'},
+            'rope_sin_q': {2: 'max_duration'},
+            'rope_cos_k': {3: 'max_duration'},
+            'rope_sin_k': {3: 'max_duration'},
             'cat_mel_text': {1: 'max_duration'},
             'cat_mel_text_drop': {1: 'max_duration'},
             'denoised': {1: 'max_duration'}
@@ -362,8 +372,10 @@ with torch.inference_mode():
         opset_version=17)
     del f5_transformer
     del noise
-    del rope_cos
-    del rope_sin
+    del rope_cos_q
+    del rope_sin_q
+    del rope_cos_k
+    del rope_sin_k
     del cat_mel_text
     del cat_mel_text_drop
     del time_step
@@ -443,6 +455,8 @@ out_name_A2 = out_name_A[2].name
 out_name_A3 = out_name_A[3].name
 out_name_A4 = out_name_A[4].name
 out_name_A5 = out_name_A[5].name
+out_name_A6 = out_name_A[6].name
+out_name_A7 = out_name_A[7].name
 
 
 ort_session_B = onnxruntime.InferenceSession(onnx_model_B, sess_options=session_opts, providers=ORT_Accelerate_Providers)
@@ -458,6 +472,8 @@ in_name_B2 = in_name_B[2].name
 in_name_B3 = in_name_B[3].name
 in_name_B4 = in_name_B[4].name
 in_name_B5 = in_name_B[5].name
+in_name_B6 = in_name_B[6].name
+in_name_B7 = in_name_B[7].name
 out_name_B0 = out_name_B[0].name
 out_name_B1 = out_name_B[1].name
 
@@ -488,8 +504,8 @@ time_step = np.array([0], dtype=np.int32)
 
 print("\n\nRun F5-TTS by ONNX Runtime.")
 start_count = time.time()
-noise, rope_cos, rope_sin, cat_mel_text, cat_mel_text_drop, ref_signal_len = ort_session_A.run(
-        [out_name_A0, out_name_A1, out_name_A2, out_name_A3, out_name_A4, out_name_A5],
+noise, rope_cos_q, rope_sin_q, rope_cos_k, rope_sin_k, cat_mel_text, cat_mel_text_drop, ref_signal_len = ort_session_A.run(
+        [out_name_A0, out_name_A1, out_name_A2, out_name_A3, out_name_A4, out_name_A5, out_name_A6, out_name_A7],
         {
             in_name_A0: audio,
             in_name_A1: text_ids,
@@ -502,11 +518,13 @@ for i in range(0, NFE_STEP, FUSE_NFE):
         [out_name_B0, out_name_B1],
         {
             in_name_B0: noise,
-            in_name_B1: rope_cos,
-            in_name_B2: rope_sin,
-            in_name_B3: cat_mel_text,
-            in_name_B4: cat_mel_text_drop,
-            in_name_B5: time_step
+            in_name_B1: rope_cos_q,
+            in_name_B2: rope_sin_q,
+            in_name_B3: rope_cos_k,
+            in_name_B4: rope_sin_k,
+            in_name_B5: cat_mel_text,
+            in_name_B6: cat_mel_text_drop,
+            in_name_B7: time_step
         })
     print(f"NFE_STEP: {i + FUSE_NFE}")
 
@@ -522,4 +540,3 @@ end_count = time.time()
 sf.write(generated_audio, generated_signal.reshape(-1), SAMPLE_RATE, format='WAVEX')
 
 print(f"\nAudio generation is complete.\n\nONNXRuntime Time Cost in Seconds:\n{end_count - start_count:.3f}")
-
