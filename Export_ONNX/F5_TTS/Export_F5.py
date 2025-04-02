@@ -160,7 +160,7 @@ class F5Transformer(torch.nn.Module):
         for i in range(len(time_step)):
             emb = time_step[i] * emb_factor
             emb = torch.cat((emb.sin(), emb.cos()), dim=-1)
-            self.time_expand[:, [i], :] = self.time_mlp(emb)
+            self.time_expand[:, [i]] = self.time_mlp(emb)
         self.time_expand = self.time_expand.to(dtype)
         self.fuse_step = fuse_step
 
