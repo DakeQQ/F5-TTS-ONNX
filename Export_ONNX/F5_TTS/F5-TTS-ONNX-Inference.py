@@ -165,6 +165,8 @@ out_name_A2 = out_name_A[2].name
 out_name_A3 = out_name_A[3].name
 out_name_A4 = out_name_A[4].name
 out_name_A5 = out_name_A[5].name
+out_name_A6 = out_name_A[6].name
+out_name_A7 = out_name_A[7].name
 
 if "CPUExecutionProvider" in ORT_Accelerate_Providers or not ORT_Accelerate_Providers:
     session_opts.graph_optimization_level = onnxruntime.GraphOptimizationLevel.ORT_ENABLE_ALL
@@ -185,6 +187,8 @@ in_name_B2 = in_name_B[2].name
 in_name_B3 = in_name_B[3].name
 in_name_B4 = in_name_B[4].name
 in_name_B5 = in_name_B[5].name
+in_name_B6 = in_name_B[6].name
+in_name_B7 = in_name_B[7].name
 out_name_B0 = out_name_B[0].name
 out_name_B1 = out_name_B[1].name
 
@@ -223,8 +227,8 @@ else:
 
 print("\n\nRun F5-TTS by ONNX Runtime.")
 start_count = time.time()
-noise, rope_cos, rope_sin, cat_mel_text, cat_mel_text_drop, ref_signal_len = ort_session_A.run(
-        [out_name_A0, out_name_A1, out_name_A2, out_name_A3, out_name_A4, out_name_A5],
+noise, rope_cos_q, rope_sin_q, rope_cos_k, rope_sin_k, cat_mel_text, cat_mel_text_drop, ref_signal_len = ort_session_A.run(
+        [out_name_A0, out_name_A1, out_name_A2, out_name_A3, out_name_A4, out_name_A5, out_name_A6, out_name_A7],
         {
             in_name_A0: audio,
             in_name_A1: text_ids,
@@ -234,8 +238,10 @@ noise, rope_cos, rope_sin, cat_mel_text, cat_mel_text_drop, ref_signal_len = ort
 if device_type:
     inputs = [
         onnxruntime.OrtValue.ortvalue_from_numpy(noise, device_type, DEVICE_ID),
-        onnxruntime.OrtValue.ortvalue_from_numpy(rope_cos, device_type, DEVICE_ID),
-        onnxruntime.OrtValue.ortvalue_from_numpy(rope_sin, device_type, DEVICE_ID),
+        onnxruntime.OrtValue.ortvalue_from_numpy(rope_cos_q, device_type, DEVICE_ID),
+        onnxruntime.OrtValue.ortvalue_from_numpy(rope_sin_q, device_type, DEVICE_ID),
+        onnxruntime.OrtValue.ortvalue_from_numpy(rope_cos_k, device_type, DEVICE_ID),
+        onnxruntime.OrtValue.ortvalue_from_numpy(rope_sin_k, device_type, DEVICE_ID),
         onnxruntime.OrtValue.ortvalue_from_numpy(cat_mel_text, device_type, DEVICE_ID),
         onnxruntime.OrtValue.ortvalue_from_numpy(cat_mel_text_drop, device_type, DEVICE_ID),
         onnxruntime.OrtValue.ortvalue_from_numpy(time_step, device_type, DEVICE_ID)
@@ -269,11 +275,13 @@ else:
             [out_name_B0, out_name_B1],
             {
                 in_name_B0: noise,
-                in_name_B1: rope_cos,
-                in_name_B2: rope_sin,
-                in_name_B3: cat_mel_text,
-                in_name_B4: cat_mel_text_drop,
-                in_name_B5: time_step
+                in_name_B1: rope_cos_q,
+                in_name_B2: rope_sin_q,
+                in_name_B3: rope_cos_k,
+                in_name_B4: rope_sin_k,
+                in_name_B5: cat_mel_text,
+                in_name_B6: cat_mel_text_drop,
+                in_name_B7: time_step
             })
         print(f"NFE_STEP: {i + FUSE_NFE}")
     
