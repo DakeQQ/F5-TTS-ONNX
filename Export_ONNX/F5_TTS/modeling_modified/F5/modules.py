@@ -421,13 +421,13 @@ class Attention(nn.Module):
 def rotate_half_q(x, heads, head_dim, head_dim_half):
     x = x.view(2, heads, -1, head_dim_half, 2)
     x1, x2 = torch.split(x, [1, 1], dim=-1)
-    return torch.stack((-x2, x1), dim=-1).reshape(2, heads, -1, head_dim)
+    return torch.cat((-x2, x1), dim=-1).reshape(2, heads, -1, head_dim)
 
 
 def rotate_half_k(x, heads, head_dim, head_dim_half):
     x = x.view(2, heads, head_dim_half, 2, -1)
     x1, x2 = torch.split(x, [1, 1], dim=-2)
-    return torch.stack((-x2, x1), dim=-2).reshape(2, heads, head_dim, -1)
+    return torch.cat((-x2, x1), dim=-2).reshape(2, heads, head_dim, -1)
 
 
 def apply_rotary_q(x, rope_cos, rope_sin, heads, head_dim, head_dim_half):
