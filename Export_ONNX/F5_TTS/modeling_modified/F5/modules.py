@@ -406,52 +406,65 @@ class Attention(nn.Module):
             c: float['b n d'] = None,  # context c
             mask: bool['b n'] | None = None,
             rope=None,
-            rope_cos=None,  # rotary position embedding for x
-            rope_sin=None,
-            qk_rotated_empty=None,
+            rope_cos_q=None,  # rotary position embedding for x
+            rope_sin_q=None,
+            rope_cos_k=None,  # rotary position embedding for x
+            rope_sin_k=None,
             c_rope=None,  # rotary position embedding for c
     ) -> torch.Tensor:
         if c is not None:
             return self.processor(self, x, c=c, mask=mask, rope=rope, c_rope=c_rope)
         else:
-            return self.processor(self, x, mask=mask, rope_cos=rope_cos, rope_sin=rope_sin)
+            return self.processor(self, x, mask=mask, rope_cos_q=rope_cos_q, rope_sin_q=rope_sin_q, rope_cos_k=rope_cos_k, rope_sin_k=rope_sin_k)
 
 
-def rotate_half(x):
-    original_shape = x.shape
-    x = x.view(*x.shape[:-1], -1, 2)
-    x1, x2 = x.unbind(dim=-1)
-    return torch.stack((-x2, x1), dim=-1).reshape(original_shape)
+def rotate_half_q(x, heads, head_dim, head_dim_half):
+    x = x.view(2, heads, -1, head_dim_half, 2)
+    x1, x2 = torch.split(x, [1, 1], dim=-1)
+    return torch.stack((-x2, x1), dim=-1).reshape(2, heads, -1, head_dim)
 
 
-def apply_rotary(x, rope_cos, rope_sin):
-    return x * rope_cos + rotate_half(x) * rope_sin
+def rotate_half_k(x, heads, head_dim, head_dim_half):
+    x = x.view(2, heads, head_dim_half, 2, -1)
+    x1, x2 = torch.split(x, [1, 1], dim=-2)
+    return torch.stack((-x2, x1), dim=-2).reshape(2, heads, head_dim, -1)
+
+
+def apply_rotary_q(x, rope_cos, rope_sin, heads, head_dim, head_dim_half):
+    return x * rope_cos + rotate_half_q(x, heads, head_dim, head_dim_half) * rope_sin
+
+
+def apply_rotary_k(x, rope_cos, rope_sin, heads, head_dim, head_dim_half):
+    return x * rope_cos + rotate_half_k(x, heads, head_dim, head_dim_half) * rope_sin
 
 
 # Attention processor
-
 class AttnProcessor:
-    def __init__(self, head_dim, hidden_size):
+    def __init__(self, head_dim, hidden_size, heads):
         self.head_dim = head_dim
+        self.head_dim_half = head_dim // 2
         self.hidden_size = hidden_size
+        self.heads = heads
 
     def __call__(
         self,
         attn: Attention,
         x: float['b n d'],  # noised input x
         mask: bool['b n'] | None = None,
-        rope_cos=None,  # rotary position embedding
-        rope_sin=None
+        rope_cos_q=None,  # rotary position embedding
+        rope_sin_q=None,
+        rope_cos_k=None,  # rotary position embedding
+        rope_sin_k=None
     ) -> torch.FloatTensor:
         query = attn.to_q(x)
         key = attn.to_k(x)
         value = attn.to_v(x)
         query = query.view(2, -1, attn.heads, self.head_dim).transpose(1, 2)
-        key = key.view(2, -1, attn.heads, self.head_dim).transpose(1, 2)
+        key = key.view(2, -1, attn.heads, self.head_dim).permute(0, 2, 3, 1)
         value = value.view(2, -1, attn.heads, self.head_dim).transpose(1, 2)
-        query = apply_rotary(query, rope_cos, rope_sin)
-        key = apply_rotary(key, rope_cos, rope_sin)
-        x = torch.matmul(torch.softmax(torch.matmul(query, key.transpose(-1, -2)), dim=-1), value).transpose(1, 2).reshape(2, -1, self.hidden_size)
+        query = apply_rotary_q(query, rope_cos_q, rope_sin_q, self.heads, self.head_dim, self.head_dim_half)
+        key = apply_rotary_k(key, rope_cos_k, rope_sin_k, self.heads, self.head_dim, self.head_dim_half)
+        x = torch.matmul(torch.softmax(torch.matmul(query, key), dim=-1, dtype=torch.float32), value).transpose(1, 2).reshape(2, -1, self.hidden_size)
         return attn.to_out[0](x)
 
 
@@ -561,7 +574,7 @@ class DiTBlock(nn.Module):
 
         self.attn_norm = AdaLayerNorm(dim)
         self.attn = Attention(
-            processor=AttnProcessor(dim_head, dim),
+            processor=AttnProcessor(dim_head, dim, heads),
             dim=dim,
             heads=heads,
             dim_head=dim_head,
@@ -572,12 +585,12 @@ class DiTBlock(nn.Module):
         self.ff_norm = nn.LayerNorm(dim, elementwise_affine=False, eps=1e-6)
         self.ff = FeedForward(dim=dim, mult=ff_mult, dropout=dropout, approximate="tanh")
 
-    def forward(self, x, t, mask=None, rope_cos=None, rope_sin=None):  # x: noised input, t: time embedding
+    def forward(self, x, t, mask=None, rope_cos_q=None, rope_sin_q=None, rope_cos_k=None, rope_sin_k=None):  # x: noised input, t: time embedding
         # pre-norm & modulation for attention input
         norm, gate_msa, shift_mlp, scale_mlp, gate_mlp = self.attn_norm(x, emb=t)
 
         # attention
-        attn_output = self.attn(x=norm, mask=mask, rope_cos=rope_cos, rope_sin=rope_sin)
+        attn_output = self.attn(x=norm, mask=mask, rope_cos_q=rope_cos_q, rope_sin_q=rope_sin_q, rope_cos_k=rope_cos_k, rope_sin_k=rope_sin_k)
 
         # process attention output for input x
         x = x + gate_msa.unsqueeze(1) * attn_output
