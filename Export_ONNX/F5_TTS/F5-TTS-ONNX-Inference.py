@@ -30,7 +30,7 @@ else:
 ORT_Accelerate_Providers = ['CPUExecutionProvider']       # If you have accelerate devices for : ['CUDAExecutionProvider', 'TensorrtExecutionProvider', 'CoreMLExecutionProvider', 'DmlExecutionProvider', 'OpenVINOExecutionProvider', 'ROCMExecutionProvider', 'MIGraphXExecutionProvider', 'AzureExecutionProvider']
                                                           # else keep empty.
 RANDOM_SEED = 9527                                        # Set seed to reproduce the generated audio
-NFE_STEP = 32                                             # F5-TTS model setting
+NFE_STEP = 32                                             # F5-TTS model setting, 0~31
 FUSE_NFE = 1                                              # Maintain the same values as the exported model.
 SPEED = 1.0                                               # Set for talking speed. Only works with dynamic_axes=True
 MAX_THREADS = 8                                           # Max CPU parallel threads.
@@ -270,7 +270,7 @@ if device_type:
     noise = onnxruntime.OrtValue.numpy(io_binding.get_outputs()[0])
 else:
     print("NFE_STEP: 0")
-    for i in range(0, NFE_STEP, FUSE_NFE):
+    for i in range(0, NFE_STEP - 1, FUSE_NFE):
         noise, time_step = ort_session_B.run(
             [out_name_B0, out_name_B1],
             {
