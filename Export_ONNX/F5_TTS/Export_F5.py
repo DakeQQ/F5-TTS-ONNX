@@ -153,14 +153,14 @@ class F5Transformer(torch.nn.Module):
         t = torch.linspace(0, 1, steps, dtype=torch.float32)
         time_step = t + self.sway_sampling_coef * (torch.cos(torch.pi * 0.5 * t) - 1 + t)
         self.delta_t = torch.diff(time_step).to(dtype)
-        self.time_expand = torch.zeros((len(time_step), self.time_mlp_dim), dtype=torch.float32)
+        self.time_expand = torch.zeros((1, len(time_step), self.time_mlp_dim), dtype=torch.float32)
         half_dim = self.freq_embed_dim // 2
         emb_factor = math.log(10000) / (half_dim - 1)
         emb_factor = 1000.0 * torch.exp(torch.arange(half_dim, dtype=torch.float32) * -emb_factor)
         for i in range(len(time_step)):
             emb = time_step[i] * emb_factor
             emb = torch.cat((emb.sin(), emb.cos()), dim=-1)
-            self.time_expand[[i], :] = self.time_mlp(emb)
+            self.time_expand[:, [i], :] = self.time_mlp(emb)
         self.time_expand = self.time_expand.to(dtype)
         self.fuse_step = fuse_step
 
@@ -175,7 +175,7 @@ class F5Transformer(torch.nn.Module):
                 time_step: torch.IntTensor
                 ):
         for nfe in range(self.fuse_step):
-            pred = self.f5_transformer(x=noise, cond=cat_mel_text, cond_drop=cat_mel_text_drop, time=self.time_expand[time_step], rope_cos_q=rope_cos_q, rope_sin_q=rope_sin_q, rope_cos_k=rope_cos_k, rope_sin_k=rope_sin_k)
+            pred = self.f5_transformer(x=noise, cond=cat_mel_text, cond_drop=cat_mel_text_drop, time=self.time_expand[:, time_step], rope_cos_q=rope_cos_q, rope_sin_q=rope_sin_q, rope_cos_k=rope_cos_k, rope_sin_k=rope_sin_k)
             pred, pred1 = torch.split(pred, [1, 1], dim=0)
             noise += (pred + (pred - pred1) * self.cfg_strength) * self.delta_t[time_step]
             time_step += 1
