@@ -42,7 +42,7 @@ ORT_Accelerate_Providers = []           # If you have accelerate devices for : [
                                         # else keep empty.
 # Model Parameters
 DYNAMIC_AXES = True                     # Default dynamic_axes is input audio length. Note, some providers only work for static axes.
-NFE_STEP = 31                           # F5-TTS model setting, 0~31
+NFE_STEP = 32                           # F5-TTS model setting, 0~31
 FUSE_NFE = 1                            # '1' means no fuse. '2' means fuse every 2 NFE steps into one to reduce I/O binding times.
 SAMPLE_RATE = 24000                     # F5-TTS model setting
 CFG_STRENGTH = 2.0                      # F5-TTS model setting
@@ -513,7 +513,7 @@ noise, rope_cos_q, rope_sin_q, rope_cos_k, rope_sin_k, cat_mel_text, cat_mel_tex
         })
 
 print("NFE_STEP: 0")
-for i in range(0, NFE_STEP, FUSE_NFE):
+for i in range(0, NFE_STEP - 1, FUSE_NFE):
     noise, time_step = ort_session_B.run(
         [out_name_B0, out_name_B1],
         {
