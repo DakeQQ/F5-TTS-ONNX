@@ -264,7 +264,7 @@ if device_type:
         )
 
     print("NFE_STEP: 0")
-    for i in range(0, NFE_STEP, FUSE_NFE):
+    for i in range(0, NFE_STEP - 1, FUSE_NFE):
         ort_session_B.run_with_iobinding(io_binding)
         print(f"NFE_STEP: {i + FUSE_NFE}")
     noise = onnxruntime.OrtValue.numpy(io_binding.get_outputs()[0])
