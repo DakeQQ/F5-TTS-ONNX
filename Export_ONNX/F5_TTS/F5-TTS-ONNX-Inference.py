@@ -150,7 +150,7 @@ session_opts.graph_optimization_level = onnxruntime.GraphOptimizationLevel.ORT_E
 session_opts.add_session_config_entry("session.intra_op.allow_spinning", "1")
 session_opts.add_session_config_entry("session.inter_op.allow_spinning", "1")
 session_opts.add_session_config_entry("session.set_denormal_as_zero", "1")
-session_opts.add_session_config_entry("disable_synchronize_execution_providers", "1");
+session_opts.add_session_config_entry("disable_synchronize_execution_providers", "1")
 
 
 session_opts.graph_optimization_level = onnxruntime.GraphOptimizationLevel.ORT_ENABLE_ALL
