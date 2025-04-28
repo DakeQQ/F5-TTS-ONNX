@@ -53,14 +53,21 @@ elif "CUDAExecutionProvider" in ORT_Accelerate_Providers:
     provider_options = [
         {
             'device_id': DEVICE_ID,
-            'gpu_mem_limit': 8 * 1024 * 1024 * 1024,      # 8 GB
-            'arena_extend_strategy': 'kNextPowerOfTwo',
-            'cudnn_conv_algo_search': 'EXHAUSTIVE',
+            'gpu_mem_limit': 8 * 1024 * 1024 * 1024,     # 8 GB
+            'arena_extend_strategy': 'kNextPowerOfTwo',  # ["kNextPowerOfTwo", "kSameAsRequested"]
+            'cudnn_conv_algo_search': 'EXHAUSTIVE',      # ["DEFAULT", "HEURISTIC", "EXHAUSTIVE"]
+            'sdpa_kernel': '2',                          # ["0", "1", "2"]
+            'use_tf32': '1',
             'cudnn_conv_use_max_workspace': '1',
-            'do_copy_in_default_stream': '1',
             'cudnn_conv1d_pad_to_nc1d': '1',
-            'enable_cuda_graph': '0',                     # Set to '0' to avoid potential errors when enabled.
-            'use_tf32': '1'            
+            'tunable_op_enable': '1',
+            'tunable_op_tuning_enable': '1',
+            'tunable_op_max_tuning_duration_ms': 1000,
+            'do_copy_in_default_stream': '0',
+            'enable_cuda_graph': '0',                    # Set to '0' to avoid potential errors when enabled.
+            'prefer_nhwc': '0',
+            'enable_skip_layer_norm_strict_mode': '0',
+            'use_ep_level_unified_stream': '0',
         }
     ]
 else:
