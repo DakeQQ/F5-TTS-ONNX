@@ -276,8 +276,8 @@ class RMSNorm(nn.Module):
             x = F.rms_norm(x, normalized_shape=(x.shape[-1],), weight=self.weight, eps=self.eps)
         else:
             x = x.float()
-            variance = (x * x).mean(-1, keepdim=True)
-            x = x / (torch.sqrt(variance) + self.eps)
+            variance = x.pow(2).mean(-1, keepdim=True)
+            x = x / (torch.sqrt(variance + self.eps))
             if self.weight.dtype in [torch.float16, torch.bfloat16]:
                 x = x.to(self.weight.dtype)
             x = x * self.weight
