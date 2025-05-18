@@ -46,7 +46,8 @@ if "OpenVINOExecutionProvider" in ORT_Accelerate_Providers:
             'num_of_threads': MAX_THREADS,
             'num_streams': 1,
             'enable_opencl_throttling': True,
-            'enable_qdq_optimizer': False                 # Enable it carefully
+            'enable_qdq_optimizer': False,                # Enable it carefully
+            'disable_dynamic_shapes': False
         }
     ]
 elif "CUDAExecutionProvider" in ORT_Accelerate_Providers:
@@ -71,6 +72,15 @@ elif "CUDAExecutionProvider" in ORT_Accelerate_Providers:
             'use_ep_level_unified_stream': '0',
         }
     ]
+elif "DmlExecutionProvider" in ORT_Accelerate_Providers:
+     provider_options = [
+         {
+             'device_id': DEVICE_ID,
+             'performance_preference': 'high_performance',  # [high_performance, default, minimum_power]
+             'device_filter': 'any'                         # [any, npu, gpu]
+         }
+     ]
+            device_type = 'dml'
 else:
     # Please config by yourself for others providers.
     provider_options = None
