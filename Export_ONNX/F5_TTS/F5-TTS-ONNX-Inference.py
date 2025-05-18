@@ -80,7 +80,6 @@ elif "DmlExecutionProvider" in ORT_Accelerate_Providers:
              'device_filter': 'any'                         # [any, npu, gpu]
          }
      ]
-            device_type = 'dml'
 else:
     # Please config by yourself for others providers.
     provider_options = None
