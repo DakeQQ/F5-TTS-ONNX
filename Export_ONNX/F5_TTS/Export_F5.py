@@ -55,7 +55,8 @@ HOP_LENGTH = 256                        # Number of samples between successive f
 # STFT/ISTFT Settings
 N_MELS = 100                            # Number of Mel bands to generate in the Mel-spectrogram
 NFFT = 1024                             # Number of FFT components for the STFT process
-WINDOW_TYPE = 'kaiser'                  # Type of window function used in the STFT
+WINDOW_LENGTH = 960                     # Length of windowing, edit it carefully.
+WINDOW_TYPE = 'hann'                    # Type of window function used in the STFT
 MAX_SIGNAL_LENGTH = 4096                # Max frames for audio length after STFT processed. Set an appropriate larger value for long audio input, such as 4096.
 
 # Setting for Static Axes using
@@ -291,7 +292,7 @@ with torch.inference_mode():
     max_duration = torch.tensor([MAX_DURATION], dtype=torch.long)
     f5_model, NUM_HEAD, HIDDEN_SIZE = load_model(F5_safetensors_path)
     HEAD_DIM = HIDDEN_SIZE // NUM_HEAD
-    custom_stft = STFT_Process(model_type='stft_B', n_fft=NFFT, hop_len=HOP_LENGTH, max_frames=0, window_type=WINDOW_TYPE).eval()
+    custom_stft = STFT_Process(model_type='stft_B', n_fft=NFFT, win_length=WINDOW_LENGTH, hop_len=HOP_LENGTH, max_frames=0, window_type=WINDOW_TYPE).eval()
     f5_preprocess = F5Preprocess(f5_model, custom_stft, nfft=NFFT, n_mels=N_MELS, sample_rate=SAMPLE_RATE, num_head=NUM_HEAD, head_dim=HEAD_DIM, target_rms=TARGET_RMS, use_fp16=use_fp16_transformer)
     torch.onnx.export(
         f5_preprocess,
@@ -388,8 +389,7 @@ with torch.inference_mode():
     # Dummy for Export the F5_Decode part
     denoised = torch.ones((1, MAX_DURATION, N_MELS), dtype=dtype)
     ref_signal_len = torch.tensor(REFERENCE_SIGNAL_LENGTH, dtype=torch.long)
-
-    custom_istft = STFT_Process(model_type='istft_A', n_fft=NFFT, hop_len=HOP_LENGTH, max_frames=MAX_SIGNAL_LENGTH, window_type=WINDOW_TYPE).eval()
+    custom_istft = STFT_Process(model_type='istft_A', n_fft=NFFT, win_length=WINDOW_LENGTH, hop_len=HOP_LENGTH, max_frames=MAX_SIGNAL_LENGTH, window_type=WINDOW_TYPE).eval()
     # Vocos model preprocess
     vocos = Vocos.from_pretrained(vocos_model_path)
     vocos.backbone.norm.weight.data = (vocos.backbone.norm.weight.data * torch.sqrt(torch.tensor(vocos.backbone.norm.weight.data.shape[0], dtype=torch.float32))).view(1, -1, 1)
