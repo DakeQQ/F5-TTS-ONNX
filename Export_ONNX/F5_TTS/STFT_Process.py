@@ -1,15 +1,5 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-"""
-Custom STFT / ISTFT ONNX exporter & verifier.
-
-Changes relative to the original template:
-  • istft_B_forward now derives magnitude, cos_phase and sin_phase
-    from real / imag directly (no 'magnitude' input, no safe divide).
-
-Everything else — including the A-variant code paths and helpers —
-is left intact so you can flip back and forth via STFT_TYPE / ISTFT_TYPE.
-"""
 import numpy as np
 import onnxruntime as ort
 import torch
@@ -17,17 +7,17 @@ import torch
 # ─────────────────────────────────────────────────────────────────────────────
 # 1. Configuration
 # ─────────────────────────────────────────────────────────────────────────────
-DYNAMIC_AXES        = True
-NFFT                = 512
-WIN_LENGTH          = 400
-HOP_LENGTH          = 160
+DYNAMIC_AXES = True                  # Default dynamic axes is input audio (signal) length.
+NFFT = 512                           # Number of FFT components for the STFT process
+WIN_LENGTH = 400                     # Length of the window function (can be different from NFFT)
+HOP_LENGTH = 160                     # Number of samples between successive frames in the STFT
 INPUT_AUDIO_LENGTH  = 16000          # dummy length for export / test
-MAX_SIGNAL_LENGTH   = 2048
-WINDOW_TYPE         = 'kaiser'       # bartlett | blackman | hamming | hann | kaiser
-PAD_MODE            = 'reflect'      # reflect | constant
+MAX_SIGNAL_LENGTH   = 2048           # Maximum number of frames for the audio length after STFT processed. Set a appropriate larger value for long audio input, such as 4096.
+WINDOW_TYPE         = 'hann'         # bartlett | blackman | hamming | hann | kaiser
+PAD_MODE            = 'constant'     # reflect | constant
 
-STFT_TYPE  = "stft_B"                # "stft_A" or "stft_B"
-ISTFT_TYPE = "istft_B"               # "istft_A" or "istft_B"
+STFT_TYPE  = "stft_B"                # # stft_A: output real_part only;  stft_B: outputs real_part & imag_part
+ISTFT_TYPE = "istft_B"               # istft_A: Inputs = [magnitude, phase];  istft_B: Inputs = [real_part, imag_part], The dtype of imag_part is float format.
 
 export_path_stft  = f"{STFT_TYPE}.onnx"
 export_path_istft = f"{ISTFT_TYPE}.onnx"
