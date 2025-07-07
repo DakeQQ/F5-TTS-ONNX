@@ -201,7 +201,7 @@ class F5Decode(torch.nn.Module):
         denoised = self.vocos.decode(denoised.transpose(1, 2))
         generated_signal = self.custom_istft(*denoised)
         generated_signal = generated_signal * self.target_rms / torch.sqrt(torch.mean(generated_signal * generated_signal))  # Optional process
-        return (generated_signal * 32768.0).clamp(min=-32768.0, max=32767.0).to(torch.int16)
+        return (generated_signal.clamp(min=-1.0, max=1.0) * 32767.0).to(torch.int16)
 
 
 def load_model(ckpt_path):
