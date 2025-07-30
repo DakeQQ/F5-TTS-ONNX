@@ -569,7 +569,18 @@ class JointAttnProcessor:
 
 # DiT Block
 class DiTBlock(nn.Module):
-    def __init__(self, dim, heads, dim_head, ff_mult=4, dropout=0.1, qk_norm=None, pe_attn_head=None):
+    def __init__(
+            self,
+            dim,
+            heads,
+            dim_head,
+            ff_mult=4,
+            dropout=0.1,
+            qk_norm=None,
+            pe_attn_head=None,
+            attn_backend="torch",  # "torch" or "flash_attn"
+            attn_mask_enabled=True,
+    ):
         super().__init__()
 
         self.attn_norm = AdaLayerNorm(dim)
