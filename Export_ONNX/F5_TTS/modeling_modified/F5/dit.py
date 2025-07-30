@@ -107,6 +107,8 @@ class DiT(nn.Module):
         qk_norm=None,
         conv_layers=0,
         pe_attn_head=None,
+        attn_backend="torch",  # "torch" | "flash_attn"
+        attn_mask_enabled=False,
         long_skip_connection=False,
         checkpoint_activations=False,
     ):
@@ -136,6 +138,8 @@ class DiT(nn.Module):
                     dropout=dropout,
                     qk_norm=qk_norm,
                     pe_attn_head=pe_attn_head,
+                    attn_backend=attn_backend,
+                    attn_mask_enabled=attn_mask_enabled,
                 )
                 for _ in range(depth)
             ]
@@ -168,6 +172,32 @@ class DiT(nn.Module):
             return outputs
 
         return ckpt_forward
+
+    def get_input_embed(
+        self,
+        x,  # b n d
+        cond,  # b n d
+        text,  # b nt
+        drop_audio_cond: bool = False,
+        drop_text: bool = False,
+        cache: bool = True,
+    ):
+        seq_len = x.shape[1]
+        if cache:
+            if drop_text:
+                if self.text_uncond is None:
+                    self.text_uncond = self.text_embed(text, seq_len, drop_text=True)
+                text_embed = self.text_uncond
+            else:
+                if self.text_cond is None:
+                    self.text_cond = self.text_embed(text, seq_len, drop_text=False)
+                text_embed = self.text_cond
+        else:
+            text_embed = self.text_embed(text, seq_len, drop_text=drop_text)
+
+        x = self.input_embed(x, cond, text_embed, drop_audio_cond=drop_audio_cond)
+
+        return x
 
     def clear_cache(self):
         self.text_cond, self.text_uncond = None, None
