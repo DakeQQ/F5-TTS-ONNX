@@ -121,7 +121,7 @@ class F5Preprocess(torch.nn.Module):
                 max_duration: torch.LongTensor,
                 ):
         audio = audio.float() * self.inv_int16
-        audio = audio * self.target_rms / torch.sqrt(torch.mean(audio * audio))  # Optional process
+        # audio = audio * self.target_rms / torch.sqrt(torch.mean(audio * audio))  # Optional process
         mel_signal_real, mel_signal_imag = self.custom_stft(audio, 'reflect')
         mel_signal = torch.matmul(self.fbank, torch.sqrt(mel_signal_real * mel_signal_real + mel_signal_imag * mel_signal_imag)).transpose(1, 2).clamp(min=1e-5).log()
         ref_signal_len = mel_signal.shape[1]
@@ -200,7 +200,7 @@ class F5Decode(torch.nn.Module):
             denoised = denoised.float()
         denoised = self.vocos.decode(denoised.transpose(1, 2))
         generated_signal = self.custom_istft(*denoised)
-        generated_signal = generated_signal * self.target_rms / torch.sqrt(torch.mean(generated_signal * generated_signal))  # Optional process
+        # generated_signal = generated_signal * self.target_rms / torch.sqrt(torch.mean(generated_signal * generated_signal))  # Optional process
         return (generated_signal.clamp(min=-1.0, max=1.0) * 32767.0).to(torch.int16)
 
 
