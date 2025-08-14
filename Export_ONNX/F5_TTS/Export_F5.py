@@ -13,7 +13,6 @@ import soundfile as sf
 from omegaconf import OmegaConf
 from pydub import AudioSegment
 from pypinyin import lazy_pinyin, Style
-from vocos import Vocos
 from STFT_Process import STFT_Process  # The custom STFT/ISTFT can be exported in ONNX format.
 python_package_path = site.getsitepackages()[-1]
 
@@ -94,7 +93,7 @@ else:
 
 from f5_tts.model import CFM, DiT  # Do not delete DiT
 from f5_tts.infer.utils_infer import load_checkpoint
-
+from vocos import Vocos
 
 class F5Preprocess(torch.nn.Module):
     def __init__(self, f5_model, custom_stft, nfft, n_mels, sample_rate, num_head, head_dim, target_rms, use_fp16):
