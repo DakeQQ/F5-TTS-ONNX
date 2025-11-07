@@ -59,7 +59,7 @@ elif "CUDAExecutionProvider" in ORT_Accelerate_Providers:
             'cudnn_conv_algo_search': 'EXHAUSTIVE',      # ["DEFAULT", "HEURISTIC", "EXHAUSTIVE"]
             'sdpa_kernel': '2',                          # ["0", "1", "2"]
             'use_tf32': '1',
-            'fuse_conv_bias': '1',
+            'fuse_conv_bias': '0',
             'cudnn_conv_use_max_workspace': '1',
             'cudnn_conv1d_pad_to_nc1d': '1',
             'tunable_op_enable': '0',
