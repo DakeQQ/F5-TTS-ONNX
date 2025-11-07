@@ -37,7 +37,7 @@ Run **F5-TTS** using ONNX Runtime for efficient and flexible text-to-speech proc
         'precision' : 'ACCURACY',
         'num_of_threads': MAX_THREADS,
         'num_streams': 1,
-        'enable_opencl_throttling' : True,
+        'enable_opencl_throttling' : False,
         'enable_qdq_optimizer': False
      }]
      ```
@@ -109,7 +109,7 @@ Run **F5-TTS** using ONNX Runtime for efficient and flexible text-to-speech proc
         'precision': 'ACCURACY',
         'num_of_threads': MAX_THREADS,
         'num_streams': 1,
-        'enable_opencl_throttling': True,
+        'enable_opencl_throttling': False,
         'enable_qdq_optimizer': False
      }]
      ```  
