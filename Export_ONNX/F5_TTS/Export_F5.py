@@ -311,6 +311,7 @@ with torch.inference_mode():
             'cat_mel_text_drop': {1: 'max_duration'}
         } if DYNAMIC_AXES else None,
         do_constant_folding=True,
+        dynamo=False,
         opset_version=17)
     del custom_stft
     del f5_preprocess
@@ -369,6 +370,7 @@ with torch.inference_mode():
             'denoised': {1: 'max_duration'}
         } if DYNAMIC_AXES else None,
         do_constant_folding=True,
+        dynamo=False,
         opset_version=17)
     del f5_transformer
     del noise
@@ -417,6 +419,7 @@ with torch.inference_mode():
             'output_audio': {2: 'generated_len'},
         } if DYNAMIC_AXES else None,
         do_constant_folding=True,
+        dynamo=False,
         opset_version=17)
     del f5_decode
     del denoised
