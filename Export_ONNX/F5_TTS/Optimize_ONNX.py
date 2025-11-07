@@ -48,7 +48,7 @@ slim(
 # transformers.optimizer
 if provider != "OpenVINOExecutionProvider":
     model = optimize_model(optimized_model_path,
-                           use_gpu=use_gpu_fp16 if (use_gpu_fp16 and provider != "CPUExecutionProvider") else False,
+                           use_gpu=False,
                            opt_level=99 if (provider == "CPUExecutionProvider") else 1,
                            num_heads=16,
                            hidden_size=1024,
