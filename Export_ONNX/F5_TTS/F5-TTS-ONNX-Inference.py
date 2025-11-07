@@ -45,7 +45,7 @@ if "OpenVINOExecutionProvider" in ORT_Accelerate_Providers:
             'precision': 'ACCURACY',                      # [FP32, FP16, ACCURACY]
             'num_of_threads': MAX_THREADS,
             'num_streams': 1,
-            'enable_opencl_throttling': True,
+            'enable_opencl_throttling': False,
             'enable_qdq_optimizer': False,                # Enable it carefully
             'disable_dynamic_shapes': False
         }
