@@ -49,7 +49,7 @@ slim(
 if provider != "OpenVINOExecutionProvider":
     model = optimize_model(optimized_model_path,
                            use_gpu=False,
-                           opt_level=99 if (provider == "CPUExecutionProvider") else 1,
+                           opt_level=2 if (provider == "CPUExecutionProvider") else 1,
                            num_heads=16,
                            hidden_size=1024,
                            provider=provider,
