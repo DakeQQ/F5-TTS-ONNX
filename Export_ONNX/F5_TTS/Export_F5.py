@@ -54,7 +54,7 @@ HOP_LENGTH = 256                        # Number of samples between successive f
 # STFT/ISTFT Settings
 N_MELS = 100                            # Number of Mel bands to generate in the Mel-spectrogram
 NFFT = 1024                             # Number of FFT components for the STFT process
-WINDOW_LENGTH = 960                     # Length of windowing, edit it carefully.
+WINDOW_LENGTH = 1024                    # Length of windowing, edit it carefully.
 WINDOW_TYPE = 'hann'                    # Type of window function used in the STFT
 MAX_SIGNAL_LENGTH = 4096                # Max frames for audio length after STFT processed. Set an appropriate larger value for long audio input, such as 4096.
 
