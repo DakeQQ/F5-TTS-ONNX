@@ -259,6 +259,7 @@ noise, rope_cos_q, rope_sin_q, rope_cos_k, rope_sin_k, cat_mel_text, cat_mel_tex
             in_name_A2: max_duration
         })
 
+device_type = None  # Temporarily skip using IOBinding
 if device_type:
     inputs = [
         onnxruntime.OrtValue.ortvalue_from_numpy(noise, device_type, DEVICE_ID),
