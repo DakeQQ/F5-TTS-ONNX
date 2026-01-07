@@ -277,12 +277,6 @@ def list_str_to_idx(
     return text
 
 
-def normalize_to_int16(audio):
-    max_val = np.max(np.abs(audio))
-    scaling_factor = 32767.0 / max_val if max_val > 0 else 1.0
-    return (audio * float(scaling_factor)).astype(np.int16)
-    
-
 print("\n\nStart to Export the F5-TTS Preprocess Part.")
 with torch.inference_mode():
     # Dummy for Export the F5_Preprocess part
@@ -489,8 +483,7 @@ out_name_C0 = out_name_C[0].name
 
 
 # Run F5-TTS by ONNX Runtime
-audio = np.array(AudioSegment.from_file(reference_audio).set_channels(1).set_frame_rate(SAMPLE_RATE).get_array_of_samples(), dtype=np.float32)
-audio = normalize_to_int16(audio)
+audio = np.array(AudioSegment.from_file(reference_audio).set_channels(1).set_frame_rate(SAMPLE_RATE).get_array_of_samples(), dtype=np.int16)
 audio_len = len(audio)
 audio = audio.reshape(1, 1, -1)
 
