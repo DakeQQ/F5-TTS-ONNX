@@ -1,0 +1,7 @@
+torch
+jieba # for chinese word tokenization
+onnxruntime # or onnxruntime-gpu. Deps on protobuf, numpy, ...
+soundfile 
+pydub
+pypinyin
+f5-tts

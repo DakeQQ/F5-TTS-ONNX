@@ -1,5 +1,7 @@
+import argparse
 import re
 import site
+import sys
 import time
 import jieba
 import torch
@@ -10,10 +12,20 @@ from pydub import AudioSegment
 from pypinyin import lazy_pinyin, Style
 python_package_path = site.getsitepackages()[-1]
 
-vocab_path           = "/home/DakeQQ/Downloads/F5TTS_v1_Base/vocab.txt"                             # The F5-TTS model vocab download path.     URL: https://huggingface.co/SWivid/F5-TTS/tree/main/F5TTS_v1_Base
-onnx_model_A         = "/home/DakeQQ/Downloads/F5_Optimized/F5_Preprocess.onnx"                     # The exported onnx model path.
-onnx_model_B         = "/home/DakeQQ/Downloads/F5_Optimized/F5_Transformer.onnx"                    # The exported onnx model path.
-onnx_model_C         = "/home/DakeQQ/Downloads/F5_Optimized/F5_Decode.onnx"                         # The exported onnx model path.
+parser = argparse.ArgumentParser(
+                    prog='F5-TTS-ONNX Inference',
+                    description='Infer F5-TTS via ONNXRT',
+                    epilog='Authors: DakeQQ')
+parser.add_argument('--vocab_path', default='/home/DakeQQ/Downloads/F5TTS_v1_Base/vocab.txt')
+parser.add_argument('--preprocessmodel_path', default='/home/DakeQQ/Downloads/F5_Optimized/F5_Preprocess.onnx')
+parser.add_argument('--transformermodel_path', default='/home/DakeQQ/Downloads/F5_Optimized/F5_Transformer.onnx')
+parser.add_argument('--decodermodel_path', default='/home/DakeQQ/Downloads/F5_Optimized/F5_Decode.onnx')
+args = parser.parse_args()
+
+vocab_path           = args.vocab_path # The F5-TTS model vocab download path.     URL: https://huggingface.co/SWivid/F5-TTS/tree/main/F5TTS_v1_Base
+onnx_model_A         = args.preprocessmodel_path  # The exported onnx model path.
+onnx_model_B         = args.transformermodel_path # The exported onnx model path.
+onnx_model_C         = args.decodermodel_path     # The exported onnx model path.
 generated_audio      = "./generated_audio.wav"
 test_in_english = False
 
