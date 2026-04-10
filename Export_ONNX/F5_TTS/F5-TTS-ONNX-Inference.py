@@ -1,4 +1,5 @@
 import argparse
+import logging
 import re
 import site
 import sys
@@ -12,15 +13,28 @@ from pydub import AudioSegment
 from pypinyin import lazy_pinyin, Style
 python_package_path = site.getsitepackages()[-1]
 
+
 parser = argparse.ArgumentParser(
                     prog='F5-TTS-ONNX Inference',
                     description='Infer F5-TTS via ONNXRT',
                     epilog='Authors: DakeQQ')
+parser.add_argument(
+    "--loglevel",
+    default="INFO",
+    choices=logging.getLevelNamesMapping().keys(),
+    help="Set the logging level"
+)
 parser.add_argument('--vocab_path', default='/home/DakeQQ/Downloads/F5TTS_v1_Base/vocab.txt')
 parser.add_argument('--preprocessmodel_path', default='/home/DakeQQ/Downloads/F5_Optimized/F5_Preprocess.onnx')
 parser.add_argument('--transformermodel_path', default='/home/DakeQQ/Downloads/F5_Optimized/F5_Transformer.onnx')
 parser.add_argument('--decodermodel_path', default='/home/DakeQQ/Downloads/F5_Optimized/F5_Decode.onnx')
+parser.add_argument('--ort_provider', default='CPUExecutionProvider')
 args = parser.parse_args()
+
+logging.basicConfig(
+ level=args.loglevel.upper(), #"INFO", ...
+ #format='%(asctime)s - %(levelname)-8s - %(message)-16s'
+)
 
 vocab_path           = args.vocab_path # The F5-TTS model vocab download path.     URL: https://huggingface.co/SWivid/F5-TTS/tree/main/F5TTS_v1_Base
 onnx_model_A         = args.preprocessmodel_path  # The exported onnx model path.
@@ -38,8 +52,10 @@ else:
     ref_text         = "对，这就是我，万人敬仰的太乙真人。"                                               # The ASR result of reference audio.
     gen_text         = "对，这就是我，万人敬仰的大可奇奇。"                                               # The target TTS.
 
+providers = onnxruntime.get_available_providers()
+logging.info(f"Available ONNXRT providers: {providers}")
 
-ORT_Accelerate_Providers = ['CPUExecutionProvider']       # If you have accelerate devices for : ['CUDAExecutionProvider', 'TensorrtExecutionProvider', 'CoreMLExecutionProvider', 'DmlExecutionProvider', 'OpenVINOExecutionProvider', 'ROCMExecutionProvider', 'MIGraphXExecutionProvider', 'AzureExecutionProvider']
+ORT_Accelerate_Providers = [args.ort_provider]            # If you have accelerate devices for : ['CUDAExecutionProvider', 'TensorrtExecutionProvider', 'CoreMLExecutionProvider', 'DmlExecutionProvider', 'OpenVINOExecutionProvider', 'ROCMExecutionProvider', 'MIGraphXExecutionProvider', 'AzureExecutionProvider']
                                                           # else keep empty.
 RANDOM_SEED = 9527                                        # Set seed to reproduce the generated audio
 NFE_STEP = 32                                             # F5-TTS model setting, 0~31
@@ -103,6 +119,7 @@ with open(vocab_path, "r", encoding="utf-8") as f:
         vocab_char_map[char[:-1]] = i
 vocab_size = len(vocab_char_map)
 
+logging.debug(f"Loaded vocab from {vocab_path}: vocab size: {vocab_size}")
 
 # From the official code
 def convert_char_to_pinyin(text_list, polyphone=True):
@@ -186,6 +203,26 @@ ort_session_A = onnxruntime.InferenceSession(onnx_model_A, sess_options=session_
 model_type = ort_session_A._inputs_meta[0].type
 in_name_A = ort_session_A.get_inputs()
 out_name_A = ort_session_A.get_outputs()
+
+def print_model_info(session):
+  meta = session.get_modelmeta()
+  logging.debug(f"Session model: name:{meta.graph_name} domain:{meta.domain} descr:{meta.description} producer:{meta.producer_name}")
+  #logging.debug(meta.custom_metadata_map)
+  inputs = session.get_inputs()
+  logging.debug("Model inputs:")
+  for i in range(0, len(inputs)):
+    im = session._inputs_meta[i]
+    input = inputs[i]
+    logging.debug(f" input: {i}\t{input.name:16}\t {im.type:16}\t{input.shape}")
+  outputs = session.get_outputs()
+  logging.debug("Model outputs:")
+  for o in range(0, len(outputs)):
+    out = session.get_outputs()[o]
+    logging.debug(f" output: {o}\t{out.name:16}\t {out.type:16}\t{out.shape}")
+
+logging.debug("Preprocessor model:")
+print_model_info(ort_session_A)
+
 in_name_A0 = in_name_A[0].name
 in_name_A1 = in_name_A[1].name
 in_name_A2 = in_name_A[2].name
@@ -203,6 +240,8 @@ if "CPUExecutionProvider" in ORT_Accelerate_Providers or not ORT_Accelerate_Prov
 else:
     session_opts.graph_optimization_level = onnxruntime.GraphOptimizationLevel.ORT_ENABLE_BASIC
 ort_session_B = onnxruntime.InferenceSession(onnx_model_B, sess_options=session_opts, providers=ORT_Accelerate_Providers, provider_options=provider_options)
+logging.debug("Transformer model:")
+print_model_info(ort_session_B)
 ORT_Accelerate_Providers = ort_session_B.get_providers()[0]
 # For Windows DirectML + Intel/AMD/Nvidia GPU,
 # pip install onnxruntime-directml --upgrade
@@ -224,6 +263,8 @@ out_name_B1 = out_name_B[1].name
 
 session_opts.graph_optimization_level = onnxruntime.GraphOptimizationLevel.ORT_ENABLE_ALL
 ort_session_C = onnxruntime.InferenceSession(onnx_model_C, sess_options=session_opts, providers=['CPUExecutionProvider'], provider_options=None)
+logging.debug("Vocoder model:")
+print_model_info(ort_session_C)
 in_name_C = ort_session_C.get_inputs()
 out_name_C = ort_session_C.get_outputs()
 in_name_C0 = in_name_C[0].name
@@ -241,8 +282,11 @@ ref_text_len = len(ref_text.encode('utf-8')) + 3 * len(re.findall(zh_pause_punc,
 gen_text_len = len(gen_text.encode('utf-8')) + 3 * len(re.findall(zh_pause_punc, gen_text))
 ref_audio_len = audio_len // HOP_LENGTH + 1
 max_duration = np.array([ref_audio_len + int(ref_audio_len / ref_text_len * gen_text_len / SPEED)], dtype=np.int64)
+logging.debug(f"Max duration: {max_duration}")
 gen_text = convert_char_to_pinyin([ref_text + gen_text])
+logging.debug(f"Input text: {gen_text}")
 text_ids = list_str_to_idx(gen_text, vocab_char_map).numpy()
+logging.debug(f"Input IDs: {text_ids}")
 time_step = np.array([0], dtype=np.int32)
 
 if "CPUExecutionProvider" in ORT_Accelerate_Providers or not ORT_Accelerate_Providers:
