@@ -1,6 +1,6 @@
 torch
 jieba # for chinese word tokenization
-onnxruntime # or onnxruntime-gpu. Deps on protobuf, numpy, ...
+onnxruntime-gpu # includes both GPU backends and the CPU one. Deps on protobuf, numpy, ...
 soundfile 
 pydub
 pypinyin
