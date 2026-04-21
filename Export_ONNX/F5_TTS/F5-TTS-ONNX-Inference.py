@@ -7,12 +7,12 @@ import time
 import jieba
 import torch
 import onnxruntime
+print(f"Found onnxruntime version {onnxruntime.__version__}")
 import soundfile as sf
 import numpy as np
 from pydub import AudioSegment
 from pypinyin import lazy_pinyin, Style
 python_package_path = site.getsitepackages()[-1]
-
 
 parser = argparse.ArgumentParser(
                     prog='F5-TTS-ONNX Inference',
@@ -24,11 +24,13 @@ parser.add_argument(
     choices=logging.getLevelNamesMapping().keys(),
     help="Set the logging level"
 )
-parser.add_argument('--vocab_path', default='/home/DakeQQ/Downloads/F5TTS_v1_Base/vocab.txt')
-parser.add_argument('--preprocessmodel_path', default='/home/DakeQQ/Downloads/F5_Optimized/F5_Preprocess.onnx')
-parser.add_argument('--transformermodel_path', default='/home/DakeQQ/Downloads/F5_Optimized/F5_Transformer.onnx')
-parser.add_argument('--decodermodel_path', default='/home/DakeQQ/Downloads/F5_Optimized/F5_Decode.onnx')
-parser.add_argument('--ort_provider', default='CPUExecutionProvider')
+parser.add_argument('--vocab_path', default='/home/DakeQQ/Downloads/F5TTS_v1_Base/vocab.txt', help='Path to the vocab txt file')
+parser.add_argument('--preprocessmodel_path', default='/home/DakeQQ/Downloads/F5_Optimized/F5_Preprocess.onnx', help='Path to the preprocessor model')
+parser.add_argument('--transformermodel_path', default='/home/DakeQQ/Downloads/F5_Optimized/F5_Transformer.onnx', help='Path to the transformer model')
+parser.add_argument('--decodermodel_path', default='/home/DakeQQ/Downloads/F5_Optimized/F5_Decode.onnx', help='Path to the Decode model')
+parser.add_argument('--ort_provider', default='CPUExecutionProvider', help='OnnxRunTime execution provider: default CPUExecutionProvider')
+parser.add_argument('--numthreads', type=int, default=8, help='Number of threads to use for onnxrt intra and inter op')
+parser.add_argument('--profile', action='store_true', help='Enable onnxrt profiling, default false')
 args = parser.parse_args()
 
 logging.basicConfig(
@@ -61,7 +63,7 @@ RANDOM_SEED = 9527                                        # Set seed to reproduc
 NFE_STEP = 32                                             # F5-TTS model setting, 0~31
 FUSE_NFE = 1                                              # Maintain the same values as the exported model.
 SPEED = 1.0                                               # Set for talking speed. Only works with dynamic_axes=True
-MAX_THREADS = 8                                           # Max CPU parallel threads.
+MAX_THREADS = args.numthreads                             # Max CPU parallel threads.
 DEVICE_ID = 0                                             # The GPU id, default to 0.
 MODEL_SAMPLE_RATE = 24000                                 # Do not modify it.
 HOP_LENGTH = 256                                          # It affects the generated audio length and speech speed.
@@ -182,6 +184,7 @@ onnxruntime.set_seed(RANDOM_SEED)
 session_opts = onnxruntime.SessionOptions()
 session_opts.log_severity_level = 4                   # fatal level = 4, it an adjustable value.
 session_opts.log_verbosity_level = 4                  # fatal level = 4, it an adjustable value.
+session_opts.enable_profiling = args.profile          # Profiling will create a json file in the current dir to be opened with chrome://tracing
 session_opts.inter_op_num_threads = MAX_THREADS       # Run different nodes with num_threads. Set 0 for auto.
 session_opts.intra_op_num_threads = MAX_THREADS       # Under the node, execute the operators with num_threads. Set 0 for auto.
 session_opts.enable_cpu_mem_arena = True              # True for execute speed; False for less memory usage.
@@ -339,12 +342,16 @@ if device_type:
 
     print("NFE_STEP: 0")
     for i in range(0, NFE_STEP - 1, FUSE_NFE):
+        start = time.perf_counter()
         ort_session_B.run_with_iobinding(io_binding)
-        print(f"NFE_STEP: {i + FUSE_NFE}")
+        end = time.perf_counter()
+        elapsed = (end - start) * 1_000
+        print(f"NFE_STEP: {i + FUSE_NFE} in {elapsed:.2f} ms")
     noise = onnxruntime.OrtValue.numpy(io_binding.get_outputs()[0])
 else:
     print("NFE_STEP: 0")
     for i in range(0, NFE_STEP - 1, FUSE_NFE):
+        start = time.perf_counter()
         noise, time_step = ort_session_B.run(
             [out_name_B0, out_name_B1],
             {
@@ -357,14 +364,17 @@ else:
                 in_name_B6: cat_mel_text_drop,
                 in_name_B7: time_step
             })
-        print(f"NFE_STEP: {i + FUSE_NFE}")
-    
+        end = time.perf_counter()
+        elapsed = (end - start) * 1_000
+        print(f"NFE_STEP: {i + FUSE_NFE} in {elapsed:.2f} millisecs")
+
 generated_signal = ort_session_C.run(
         [out_name_C0],
         {
             in_name_C0: noise,
             in_name_C1: ref_signal_len
         })[0]
+logging.debug(f"generated_signal {generated_signal}")
 end_count = time.time()
 
 # Save to audio
