@@ -1,5 +1,8 @@
+import argparse
 import gc
+import logging
 import re
+from pathlib import Path
 import shutil
 import site
 import time
@@ -8,6 +11,7 @@ import torch
 import torchaudio
 import jieba
 import onnxruntime
+print(f"Found onnxruntime version {onnxruntime.__version__}")
 import numpy as np
 import soundfile as sf
 from omegaconf import OmegaConf
@@ -16,15 +20,31 @@ from pypinyin import lazy_pinyin, Style
 from STFT_Process import STFT_Process  # The custom STFT/ISTFT can be exported in ONNX format.
 python_package_path = site.getsitepackages()[-1]
 
-test_in_english      = False                                                                                 # Test the F5-TTS-ONNX model after the export process.
-use_fp16_transformer = False                                                                                 # Export the F5_Transformer.onnx in float16 format.
-F5_safetensors_path  = "/home/DakeQQ/Downloads/F5TTS_v1_Base/model_1250000.safetensors"                      # The F5-TTS model download path.           URL: https://huggingface.co/SWivid/F5-TTS/tree/main/F5TTS_v1_Base
-vocab_path           = "/home/DakeQQ/Downloads/F5TTS_v1_Base/vocab.txt"                                      # The F5-TTS model vocab download path.     URL: https://huggingface.co/SWivid/F5-TTS/tree/main/F5TTS_v1_Base
-vocos_model_path     = "/home/DakeQQ/Downloads/vocos-mel-24khz"                                              # The Vocos model download path.            URL: https://huggingface.co/charactr/vocos-mel-24khz/tree/main
-onnx_model_A         = "/home/DakeQQ/Downloads/F5_ONNX/F5_Preprocess.onnx"                                   # The exported onnx model path.
-onnx_model_B         = "/home/DakeQQ/Downloads/F5_ONNX/F5_Transformer.onnx"                                  # The exported onnx model path.
-onnx_model_C         = "/home/DakeQQ/Downloads/F5_ONNX/F5_Decode.onnx"                                       # The exported onnx model path.
-generated_audio      = "generated.wav"                                                                       # The generated audio path.
+
+home = str(Path.home())
+print("home: ", Path.home())
+
+parser = argparse.ArgumentParser(
+                    prog='F5-TTS model export',
+                    description='Export F5-TTS into ONNX format',
+                    epilog='Authors: DakeQQ')
+parser.add_argument("--loglevel", default="INFO", choices=logging.getLevelNamesMapping().keys(), help="Set the logging level. Default INFO")
+parser.add_argument('--vocab_path', default=home+'/Downloads/F5TTS_v1_Base/vocab.txt', help='Path to the vocab txt file')
+parser.add_argument('--f5safetensor_path', default=home+'/Downloads/F5TTS_v1_Base/model_1250000.safetensors', help='Path to the F5 model to export')
+F5TTS_base_omegacfg_path = python_package_path + "/f5_tts/configs/F5TTS_v1_Base.yaml"
+parser.add_argument('--omegacfg_path', default=F5TTS_base_omegacfg_path, help='Path to the OmegaConf cfg yml path. Default to F5TTS_v1_Base.yaml from the F5 project' )
+args = parser.parse_args()
+
+test_in_english      = False                                            # Test the F5-TTS-ONNX model after the export process.
+use_fp16_transformer = False                                            # Export the F5_Transformer.onnx in float16 format.
+F5_safetensors_path  = args.f5safetensor_path                           # The F5-TTS model download path.           URL: https://huggingface.co/SWivid/F5-TTS/tree/main/F5TTS_v1_Base
+omegacfg_path        = args.omegacfg_path                               # Path to the omega config file
+vocab_path           = args.vocab_path                                  # The F5-TTS model vocab download path.     URL: https://huggingface.co/SWivid/F5-TTS/tree/main/F5TTS_v1_Base
+vocos_model_path     = home+"/Downloads/vocos-mel-24khz"                # The Vocos model download path.            URL: https://huggingface.co/charactr/vocos-mel-24khz/tree/main
+onnx_model_A         = home+"/Downloads/F5_ONNX/F5_Preprocess.onnx"     # The exported onnx model path.
+onnx_model_B         = home+"/Downloads/F5_ONNX/F5_Transformer.onnx"    # The exported onnx model path.
+onnx_model_C         = home+"/Downloads/F5_ONNX/F5_Decode.onnx"         # The exported onnx model path.
+generated_audio      = "generated.wav"                                  # The generated audio path.
 
 if test_in_english:
     reference_audio  = python_package_path + "/f5_tts/infer/examples/basic/basic_ref_en.wav"
@@ -76,6 +96,7 @@ with open(vocab_path, "r", encoding="utf-8") as f:
     for i, char in enumerate(f):
         vocab_char_map[char[:-1]] = i
 vocab_size = len(vocab_char_map)
+logging.debug(f"Loaded vocab from {vocab_path}: vocab size: {vocab_size}")
 
 # Replace the original source code.
 # Note! please re-install the vocos after the export process.
@@ -203,9 +224,13 @@ class F5Decode(torch.nn.Module):
         return (generated_signal.clamp(min=-1.0, max=1.0) * 32767.0).to(torch.int16)
 
 
-def load_model(ckpt_path):
-    model_cfg = OmegaConf.load(python_package_path + "/f5_tts/configs/F5TTS_v1_Base.yaml")
+def load_model(ckpt_path, omegacfg_path):
+    print("Load model from checkpoint: ", ckpt_path)
+    print("Loading OmegaConf from ", omegacfg_path)
+    model_cfg = OmegaConf.load(omegacfg_path)
+    logging.debug(model_cfg)
     model_cls = globals()[model_cfg.model.backbone]
+    logging.debug(model_cls)
     model = CFM(
         transformer=model_cls(**model_cfg.model.arch, text_num_embeds=vocab_size, mel_dim=N_MELS),
         mel_spec_kwargs=dict(  # Not important here. Use the custom STFT/ISTFT instead.
@@ -218,8 +243,8 @@ def load_model(ckpt_path):
         ),
         vocab_char_map=vocab_char_map,
     ).to('cpu')
+    logging.info("Loading checkpoint ...")
     return load_checkpoint(model, ckpt_path, 'cpu', use_ema=True), model_cfg.model.arch.heads, model_cfg.model.arch.dim
-
 
 # From the official code
 def convert_char_to_pinyin(text_list, polyphone=True):
@@ -283,7 +308,8 @@ with torch.inference_mode():
     audio = torch.ones((1, 1, AUDIO_LENGTH), dtype=torch.int16)
     text_ids = torch.ones((1, TEXT_IDS_LENGTH), dtype=torch.int32)
     max_duration = torch.tensor([MAX_DURATION], dtype=torch.long)
-    f5_model, NUM_HEAD, HIDDEN_SIZE = load_model(F5_safetensors_path)
+    logging.info(f"Loading f5 model from {F5_safetensors_path}")
+    f5_model, NUM_HEAD, HIDDEN_SIZE = load_model(F5_safetensors_path, omegacfg_path)
     HEAD_DIM = HIDDEN_SIZE // NUM_HEAD
     custom_stft = STFT_Process(model_type='stft_B', n_fft=NFFT, win_length=WINDOW_LENGTH, hop_len=HOP_LENGTH, max_frames=0, window_type=WINDOW_TYPE).eval()
     f5_preprocess = F5Preprocess(f5_model, custom_stft, nfft=NFFT, n_mels=N_MELS, sample_rate=SAMPLE_RATE, num_head=NUM_HEAD, head_dim=HEAD_DIM, target_rms=TARGET_RMS, use_fp16=use_fp16_transformer)
