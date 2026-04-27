@@ -18,8 +18,8 @@ from omegaconf import OmegaConf
 from pydub import AudioSegment
 from pypinyin import lazy_pinyin, Style
 from STFT_Process import STFT_Process  # The custom STFT/ISTFT can be exported in ONNX format.
-python_package_path = site.getsitepackages()[-1]
 
+python_package_path = site.getsitepackages()[-1]
 
 home = str(Path.home())
 print("home: ", Path.home())
@@ -31,20 +31,31 @@ parser = argparse.ArgumentParser(
 parser.add_argument("--loglevel", default="INFO", choices=logging.getLevelNamesMapping().keys(), help="Set the logging level. Default INFO")
 parser.add_argument('--vocab_path', default=home+'/Downloads/F5TTS_v1_Base/vocab.txt', help='Path to the vocab txt file')
 parser.add_argument('--f5safetensor_path', default=home+'/Downloads/F5TTS_v1_Base/model_1250000.safetensors', help='Path to the F5 model to export')
+parser.add_argument('--preprocessmodel_path', default=home+'/Downloads/F5_ONNX/F5_Preprocess.onnx', help='Path to export the preprocessor model to')
+parser.add_argument('--transformermodel_path', default=home+'/Downloads/F5_ONNX/F5_Transformer.onnx', help='Path to export the transformer model to')
+parser.add_argument('--decodermodel_path', default=home+'/Downloads/F5_ONNX/F5_Decode.onnx', help='Path to export the Decode model to')
+parser.add_argument('--vocosmodel_dir', default=home+"/Downloads/vocos-mel-24khz", help='Folder containing the vocos model. Default to $HOME/Downloads/vocos-mel-24khz')
 F5TTS_base_omegacfg_path = python_package_path + "/f5_tts/configs/F5TTS_v1_Base.yaml"
 parser.add_argument('--omegacfg_path', default=F5TTS_base_omegacfg_path, help='Path to the OmegaConf cfg yml path. Default to F5TTS_v1_Base.yaml from the F5 project' )
+parser.add_argument('--fp16transformer', action='store_true', help='Export the transformer model at fp16 datatype. Default:false')
+parser.add_argument('--testlang', default='zh', help='Language to test: zh, en, ar, ...Default:zh')
 args = parser.parse_args()
 
-test_in_english      = False                                            # Test the F5-TTS-ONNX model after the export process.
-use_fp16_transformer = False                                            # Export the F5_Transformer.onnx in float16 format.
+logging.basicConfig(
+ level=args.loglevel.upper(), #"INFO", ...
+ #format='%(asctime)s - %(levelname)-8s - %(message)-16s'
+)
+
+test_in_english      = args.testlang=='en'                              # Test the F5-TTS-ONNX model after the export process.
+use_fp16_transformer = args.fp16transformer                             # Export the F5_Transformer.onnx in float16 format.
 F5_safetensors_path  = args.f5safetensor_path                           # The F5-TTS model download path.           URL: https://huggingface.co/SWivid/F5-TTS/tree/main/F5TTS_v1_Base
 omegacfg_path        = args.omegacfg_path                               # Path to the omega config file
 vocab_path           = args.vocab_path                                  # The F5-TTS model vocab download path.     URL: https://huggingface.co/SWivid/F5-TTS/tree/main/F5TTS_v1_Base
-vocos_model_path     = home+"/Downloads/vocos-mel-24khz"                # The Vocos model download path.            URL: https://huggingface.co/charactr/vocos-mel-24khz/tree/main
-onnx_model_A         = home+"/Downloads/F5_ONNX/F5_Preprocess.onnx"     # The exported onnx model path.
-onnx_model_B         = home+"/Downloads/F5_ONNX/F5_Transformer.onnx"    # The exported onnx model path.
-onnx_model_C         = home+"/Downloads/F5_ONNX/F5_Decode.onnx"         # The exported onnx model path.
-generated_audio      = "generated.wav"                                  # The generated audio path.
+vocos_model_path     = args.vocosmodel_dir                              # The Vocos model download path.            URL: https://huggingface.co/charactr/vocos-mel-24khz/tree/main
+onnx_model_A         = args.preprocessmodel_path                        # The exported onnx model path.
+onnx_model_B         = args.transformermodel_path                       # The exported onnx model path.
+onnx_model_C         = args.decodermodel_path                           # The exported onnx model path.
+generated_audio      = f"generated-{args.testlang}.wav"                 # The generated audio path.
 
 if test_in_english:
     reference_audio  = python_package_path + "/f5_tts/infer/examples/basic/basic_ref_en.wav"
@@ -164,20 +175,31 @@ class F5Preprocess(torch.nn.Module):
 
 class F5Transformer(torch.nn.Module):
     def __init__(self, f5_model, cfg, steps, sway_coef, dtype, fuse_step):
+        logging.debug(f"New F5Transformer: cfg_strength={cfg} steps={steps} fuse_step={fuse_step}")
         super(F5Transformer, self).__init__()
         self.f5_transformer = f5_model.transformer
+        # time_mlp: Multi Layer Perceptron (torch Sequential NN Linear > SiLU > Linear
         self.time_mlp = f5_model.transformer.time_embed.time_mlp
+        logging.debug(f"time_mlp={self.time_mlp}")
+        out_features = self.time_mlp[-1].out_features
+        logging.debug(f"time_mlp outputs: {out_features}")
         self.freq_embed_dim = 256
-        self.time_mlp_dim = 1024
+        self.time_mlp_dim = out_features # 1024 for F5base, 768 for Silma, ...
         self.cfg_strength = cfg
         self.sway_sampling_coef = sway_coef
+        # time:
         t = torch.linspace(0, 1, steps, dtype=torch.float32)
         time_step = t + self.sway_sampling_coef * (torch.cos(torch.pi * 0.5 * t) - 1 + t)
+        logging.debug(f"time_step={time_step}")
         self.delta_t = torch.diff(time_step).to(dtype)
+        logging.debug(f"time_mlp_dim={self.time_mlp_dim}")
         self.time_expand = torch.zeros((1, len(time_step), self.time_mlp_dim), dtype=torch.float32)
+        logging.info(f"time_expand={self.time_expand.shape}")
         half_dim = self.freq_embed_dim // 2
         emb_factor = math.log(10000) / (half_dim - 1)
         emb_factor = 1000.0 * torch.exp(torch.arange(half_dim, dtype=torch.float32) * -emb_factor)
+        logging.debug(f"emb_factor={emb_factor.shape}")
+        logging.info(f"Preparing time_expand tensor for {len(time_step)} time steps...")
         for i in range(len(time_step)):
             emb = time_step[i] * emb_factor
             emb = torch.cat((emb.sin(), emb.cos()), dim=-1)
@@ -311,6 +333,7 @@ with torch.inference_mode():
     logging.info(f"Loading f5 model from {F5_safetensors_path}")
     f5_model, NUM_HEAD, HIDDEN_SIZE = load_model(F5_safetensors_path, omegacfg_path)
     HEAD_DIM = HIDDEN_SIZE // NUM_HEAD
+    logging.debug(f"HEAD-DIM={HEAD_DIM}")
     custom_stft = STFT_Process(model_type='stft_B', n_fft=NFFT, win_length=WINDOW_LENGTH, hop_len=HOP_LENGTH, max_frames=0, window_type=WINDOW_TYPE).eval()
     f5_preprocess = F5Preprocess(f5_model, custom_stft, nfft=NFFT, n_mels=N_MELS, sample_rate=SAMPLE_RATE, num_head=NUM_HEAD, head_dim=HEAD_DIM, target_rms=TARGET_RMS, use_fp16=use_fp16_transformer)
     torch.onnx.export(
@@ -342,7 +365,7 @@ with torch.inference_mode():
 print("\nExport Done.")
 
 
-print("\n\nStart to Export the F5-TTS Transformer Part.")
+print(f"\n\nStart to Export the F5-TTS Transformer Part. (fp16={use_fp16_transformer})")
 with torch.inference_mode():
     scale_factor = math.pow(HEAD_DIM, -0.25)
     if use_fp16_transformer:
@@ -351,8 +374,9 @@ with torch.inference_mode():
         dtype = torch.float16
     else:
         dtype = torch.float32
-    # Pre scale
-    for i in range(len(f5_model.transformer.transformer_blocks)):
+    numblocks = len(f5_model.transformer.transformer_blocks)
+    logging.info(f"Pre scaling using scale_factor={scale_factor} on {numblocks} transformer blocks...")
+    for i in range(numblocks):
         f5_model.transformer.transformer_blocks._modules[f'{i}'].attn.to_q.weight.data *= scale_factor
         f5_model.transformer.transformer_blocks._modules[f'{i}'].attn.to_q.bias.data *= scale_factor
         f5_model.transformer.transformer_blocks._modules[f'{i}'].attn.to_k.weight.data *= scale_factor
@@ -370,9 +394,11 @@ with torch.inference_mode():
         print('\nNote: NFE fusion is exporting. It may take a long time and create a large ONNX graph, potentially causing Netron to fail or increasing model loading time.')
     else:
         fuse_nfe_step = 1
+    logging.info(f"Creating a F5 Transformer model for steps={NFE_STEP} dtype={dtype}")
     f5_transformer = F5Transformer(f5_model, cfg=CFG_STRENGTH, steps=NFE_STEP, sway_coef=SWAY_COEFFICIENT, dtype=dtype, fuse_step=FUSE_NFE)
     if use_fp16_transformer:
         f5_transformer = f5_transformer.half()
+    logging.info("onnx exporting ....")
     torch.onnx.export(
         f5_transformer,
         (noise, rope_cos_q, rope_sin_q, rope_cos_k, rope_sin_k, cat_mel_text, cat_mel_text_drop, time_step),
@@ -412,6 +438,7 @@ with torch.inference_mode():
     ref_signal_len = torch.tensor(REFERENCE_SIGNAL_LENGTH, dtype=torch.long)
     custom_istft = STFT_Process(model_type='istft_A', n_fft=NFFT, win_length=WINDOW_LENGTH, hop_len=HOP_LENGTH, max_frames=MAX_SIGNAL_LENGTH, window_type=WINDOW_TYPE).eval()
     # Vocos model preprocess
+    logging.info("Creting a vocos model from {vocos_model_path} ...")
     vocos = Vocos.from_pretrained(vocos_model_path)
     vocos.backbone.norm.weight.data = (vocos.backbone.norm.weight.data * torch.sqrt(torch.tensor(vocos.backbone.norm.weight.data.shape[0], dtype=torch.float32))).view(1, -1, 1)
     vocos.backbone.norm.bias.data = vocos.backbone.norm.bias.data.view(1, -1, 1)
