@@ -6,3 +6,4 @@ soundfile
 pydub
 pypinyin # For chinese character conversin
 f5-tts
+silma-tts  # https://github.com/SILMA-AI/silma-tts

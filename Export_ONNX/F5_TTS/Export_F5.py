@@ -34,11 +34,15 @@ parser.add_argument('--f5safetensor_path', default=home+'/Downloads/F5TTS_v1_Bas
 parser.add_argument('--preprocessmodel_path', default=home+'/Downloads/F5_ONNX/F5_Preprocess.onnx', help='Path to export the preprocessor model to')
 parser.add_argument('--transformermodel_path', default=home+'/Downloads/F5_ONNX/F5_Transformer.onnx', help='Path to export the transformer model to')
 parser.add_argument('--decodermodel_path', default=home+'/Downloads/F5_ONNX/F5_Decode.onnx', help='Path to export the Decode model to')
+parser.add_argument('--onnx_opset_version', default=17, type=int, help='ONNX opset version, default: 17')
 parser.add_argument('--vocosmodel_dir', default=home+"/Downloads/vocos-mel-24khz", help='Folder containing the vocos model. Default to $HOME/Downloads/vocos-mel-24khz')
 F5TTS_base_omegacfg_path = python_package_path + "/f5_tts/configs/F5TTS_v1_Base.yaml"
 parser.add_argument('--omegacfg_path', default=F5TTS_base_omegacfg_path, help='Path to the OmegaConf cfg yml path. Default to F5TTS_v1_Base.yaml from the F5 project' )
 parser.add_argument('--fp16transformer', action='store_true', help='Export the transformer model at fp16 datatype. Default:false')
-parser.add_argument('--testlang', default='zh', help='Language to test: zh, en, ar, ...Default:zh')
+parser.add_argument('--testlang', default='zh', help='Language to test: zh, en, ar,... Default:zh')
+parser.add_argument('--seed', type=int, default=9527, help='ONNXRT Random seed')
+parser.add_argument('--target_rms', type=float, default=0.15, help='Audio root mean square, Default: 0.15')
+parser.add_argument('--nfe_step', type=int, default=32, help='Number of NFE steps (Number of Function Evaluations). Default:32')
 args = parser.parse_args()
 
 logging.basicConfig(
@@ -52,15 +56,24 @@ F5_safetensors_path  = args.f5safetensor_path                           # The F5
 omegacfg_path        = args.omegacfg_path                               # Path to the omega config file
 vocab_path           = args.vocab_path                                  # The F5-TTS model vocab download path.     URL: https://huggingface.co/SWivid/F5-TTS/tree/main/F5TTS_v1_Base
 vocos_model_path     = args.vocosmodel_dir                              # The Vocos model download path.            URL: https://huggingface.co/charactr/vocos-mel-24khz/tree/main
+onnx_opset_version   = args.onnx_opset_version
 onnx_model_A         = args.preprocessmodel_path                        # The exported onnx model path.
 onnx_model_B         = args.transformermodel_path                       # The exported onnx model path.
 onnx_model_C         = args.decodermodel_path                           # The exported onnx model path.
-generated_audio      = f"generated-{args.testlang}.wav"                 # The generated audio path.
+generated_audio      = f"generated-{args.testlang}-{'fp16' if use_fp16_transformer else 'fp32'}.wav"    # The generated audio path.
 
 if test_in_english:
     reference_audio  = python_package_path + "/f5_tts/infer/examples/basic/basic_ref_en.wav"
     ref_text         = "Some call me nature, others call me mother nature."
     gen_text         = "Some call me Dake, others call me QQ."
+elif args.testlang=='ar':
+    # Requires: pip install silma-tts
+    reference_audio  = python_package_path + "/silma_tts/infer/ref_audio_samples/ar.ref.24k.wav"
+    ref_text         = "ويدقق النظر في القرآن الكريم وسائر الكتب السماوية ويتبع مسالك الرسل العظام عليهم الصلاة والسلام."
+    gen_text         = """
+    أنا نموذج جديد من سلمى لتحويل النص إلى كلام، يمكنني التحدث باللغة العربية مع أو بدون علامات التشكيل.
+    """.strip()
+    logging.debug(gen_text)
 else:
     reference_audio  = python_package_path + "/f5_tts/infer/examples/basic/basic_ref_zh.wav"                   # The reference audio path.
     ref_text         = "对，这就是我，万人敬仰的太乙真人。"                                                          # The ASR result of reference audio.
@@ -72,14 +85,14 @@ ORT_Accelerate_Providers = []           # If you have accelerate devices for : [
                                         # else keep empty.
 # Model Parameters
 DYNAMIC_AXES = True                     # Default dynamic_axes is input audio length. Note, some providers only work for static axes.
-NFE_STEP = 32                           # F5-TTS model setting, 0~31
+NFE_STEP = args.nfe_step                # F5-TTS model setting, 0~31
 FUSE_NFE = 1                            # '1' means no fuse. '2' means fuse every 2 NFE steps into one to reduce I/O binding times.
 SAMPLE_RATE = 24000                     # F5-TTS model setting
 CFG_STRENGTH = 2.0                      # F5-TTS model setting
 SWAY_COEFFICIENT = -1.0                 # F5-TTS model setting
-TARGET_RMS = 0.15                       # The root-mean-square value for the audio
+TARGET_RMS = args.target_rms            # The root-mean-square value for the audio. 0.15 for the default F5 v1 model.
 SPEED = 1.0                             # Set for talking speed. Only works with dynamic_axes=True
-RANDOM_SEED = 9527                      # Set seed to reproduce the generated audio
+RANDOM_SEED = args.seed                 # Set seed to reproduce the generated audio
 HOP_LENGTH = 256                        # Number of samples between successive frames in the STFT. It affects the generated audio length and speech speed.
 
 # STFT/ISTFT Settings
@@ -129,6 +142,7 @@ from vocos import Vocos
 
 class F5Preprocess(torch.nn.Module):
     def __init__(self, f5_model, custom_stft, nfft, n_mels, sample_rate, num_head, head_dim, target_rms, use_fp16):
+        logging.debug(f"New F5Preprocess target_rms={target_rms}")
         super(F5Preprocess, self).__init__()
         self.f5_text_embed = f5_model.transformer.text_embed
         self.custom_stft = custom_stft
@@ -545,10 +559,13 @@ ref_text_len = len(ref_text.encode('utf-8')) + 3 * len(re.findall(zh_pause_punc,
 gen_text_len = len(gen_text.encode('utf-8')) + 3 * len(re.findall(zh_pause_punc, gen_text))
 ref_audio_len = audio.shape[-1] // HOP_LENGTH + 1
 max_duration = np.array([ref_audio_len + int(ref_audio_len / ref_text_len * gen_text_len / SPEED)], dtype=np.int64)
+logging.debug("Input text before conversion to pinyin:")
+logging.debug(gen_text)
 gen_text = convert_char_to_pinyin([ref_text + gen_text])
+logging.debug("Input text after conversion to pinyin:")
+logging.debug(gen_text)
 text_ids = list_str_to_idx(gen_text, vocab_char_map).numpy()
 time_step = np.array([0], dtype=np.int32)
-
 
 print("\n\nRun F5-TTS by ONNX Runtime.")
 start_count = time.time()
@@ -584,7 +601,7 @@ generated_signal = ort_session_C.run(
         })[0]
 end_count = time.time()
 
-# Save to audio
+print("Saving audio to ", generated_audio)
 sf.write(generated_audio, generated_signal.reshape(-1), SAMPLE_RATE, format='WAVEX')
 
 print(f"\nAudio generation is complete.\n\nONNXRuntime Time Cost in Seconds:\n{end_count - start_count:.3f}")
