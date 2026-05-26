@@ -5,11 +5,13 @@ import re
 from pathlib import Path
 import shutil
 import site
+import sys
 import time
 import math
 import torch
 import torchaudio
 import jieba
+import onnx # usefull to add metadata
 import onnxruntime
 print(f"Found onnxruntime version {onnxruntime.__version__}")
 import numpy as np
@@ -34,7 +36,10 @@ parser.add_argument('--f5safetensor_path', default=home+'/Downloads/F5TTS_v1_Bas
 parser.add_argument('--preprocessmodel_path', default=home+'/Downloads/F5_ONNX/F5_Preprocess.onnx', help='Path to export the preprocessor model to')
 parser.add_argument('--transformermodel_path', default=home+'/Downloads/F5_ONNX/F5_Transformer.onnx', help='Path to export the transformer model to')
 parser.add_argument('--decodermodel_path', default=home+'/Downloads/F5_ONNX/F5_Decode.onnx', help='Path to export the Decode model to')
+DTYPEMAP={'f32':torch.float32, 'i16':torch.int16}
+parser.add_argument('--decoder_output_type', default='i16', help='Decoder output type. Default int16', choices=list(DTYPEMAP.keys()))
 parser.add_argument('--onnx_opset_version', default=17, type=int, help='ONNX opset version, default: 17')
+parser.add_argument('--onnx_add_metadata', action='store_true', default=False, help='Add some metadata to the onnx files (NFE_STEPS, ...)')
 parser.add_argument('--vocosmodel_dir', default=home+"/Downloads/vocos-mel-24khz", help='Folder containing the vocos model. Default to $HOME/Downloads/vocos-mel-24khz')
 F5TTS_base_omegacfg_path = python_package_path + "/f5_tts/configs/F5TTS_v1_Base.yaml"
 parser.add_argument('--omegacfg_path', default=F5TTS_base_omegacfg_path, help='Path to the OmegaConf cfg yml path. Default to F5TTS_v1_Base.yaml from the F5 project' )
@@ -44,7 +49,7 @@ parser.add_argument('--seed', type=int, default=9527, help='ONNXRT Random seed')
 parser.add_argument('--target_rms', type=float, default=0.15, help='Audio root mean square, Default: 0.15')
 parser.add_argument('--nfe_step', type=int, default=32, help='Number of NFE steps (Number of Function Evaluations). Default:32')
 args = parser.parse_args()
-
+decoder_output_type=DTYPEMAP[args.decoder_output_type]
 logging.basicConfig(
  level=args.loglevel.upper(), #"INFO", ...
  #format='%(asctime)s - %(levelname)-8s - %(message)-16s'
@@ -240,12 +245,13 @@ class F5Transformer(torch.nn.Module):
 
 
 class F5Decode(torch.nn.Module):
-    def __init__(self, vocos, custom_istft, target_rms, use_fp16):
+    def __init__(self, vocos, custom_istft, target_rms, use_fp16, output_type=torch.int16):
         super(F5Decode, self).__init__()
         self.vocos = vocos
         self.custom_istft = custom_istft
         self.target_rms = float(target_rms)
         self.use_fp16 = use_fp16
+        self.output_type = output_type
 
     def forward(self,
                 denoised: torch.FloatTensor,
@@ -256,9 +262,16 @@ class F5Decode(torch.nn.Module):
             denoised = denoised.float()
         denoised = self.vocos.decode(denoised.transpose(1, 2))
         generated_signal = self.custom_istft(*denoised)
+        #logging.info(f"F5Decode: generated_signal before conversion: {generated_signal.dtype}")
         # generated_signal = generated_signal * self.target_rms / torch.sqrt(torch.mean(generated_signal * generated_signal))  # Optional process
-        return (generated_signal.clamp(min=-1.0, max=1.0) * 32767.0).to(torch.int16)
-
+        #logging.info(f"sys maxint={sys.maxint}")
+        #logging.info(f"shrt_max={limits.shrt_max}")
+        if self.output_type == torch.int16:
+            max_int16 = float((1 << 15) - 1)  # Result: 32767.0
+            return (generated_signal.clamp(min=-1.0, max=1.0) * 32767.0).to(torch.int16)
+        if self.output_type == torch.float32:
+            return generated_signal
+        logging.error(f"Unsupported output type: {self.output_type}")
 
 def load_model(ckpt_path, omegacfg_path):
     print("Load model from checkpoint: ", ckpt_path)
@@ -370,6 +383,16 @@ with torch.inference_mode():
         do_constant_folding=True,
         dynamo=False,
         opset_version=17)
+    if args.onnx_add_metadata:
+       logging.info("Adding metadata to the Prepro onnx model file...")
+       model = onnx.load(onnx_model_A)
+       hop = model.metadata_props.add()
+       hop.key = "hop_length"
+       hop.value = str(HOP_LENGTH)
+       sr = model.metadata_props.add()
+       sr.key = "sample_rate"
+       sr.value = str(SAMPLE_RATE)
+       onnx.save(model, onnx_model_A)
     del custom_stft
     del f5_preprocess
     del audio
@@ -412,7 +435,7 @@ with torch.inference_mode():
     f5_transformer = F5Transformer(f5_model, cfg=CFG_STRENGTH, steps=NFE_STEP, sway_coef=SWAY_COEFFICIENT, dtype=dtype, fuse_step=FUSE_NFE)
     if use_fp16_transformer:
         f5_transformer = f5_transformer.half()
-    logging.info("onnx exporting ....")
+    logging.info(f"onnx exporting into {onnx_model_B}....")
     torch.onnx.export(
         f5_transformer,
         (noise, rope_cos_q, rope_sin_q, rope_cos_k, rope_sin_k, cat_mel_text, cat_mel_text_drop, time_step),
@@ -432,6 +455,14 @@ with torch.inference_mode():
         do_constant_folding=True,
         dynamo=False,
         opset_version=17)
+    if args.onnx_add_metadata:
+       logging.info("Adding metadata to the Transformer onnx model file...")
+       model = onnx.load(onnx_model_B)
+       nfes = model.metadata_props.add()
+       nfes.key = "default_nfe_steps"
+       nfes.value = str(NFE_STEP)
+       onnx.save(model, onnx_model_B)
+
     del f5_transformer
     del noise
     del rope_cos_q
@@ -468,7 +499,7 @@ with torch.inference_mode():
         block.pwconv2.weight.data = (block.gamma.data.unsqueeze(-1) * block.pwconv2.weight.data).unsqueeze(0)
         block.pwconv2.bias.data = (block.gamma.data * block.pwconv2.bias.data).view(1, -1, 1)
 
-    f5_decode = F5Decode(vocos, custom_istft, target_rms=TARGET_RMS, use_fp16=use_fp16_transformer)
+    f5_decode = F5Decode(vocos, custom_istft, target_rms=TARGET_RMS, use_fp16=use_fp16_transformer, output_type=decoder_output_type)
     torch.onnx.export(
         f5_decode,
         (denoised, ref_signal_len),
@@ -482,6 +513,13 @@ with torch.inference_mode():
         do_constant_folding=True,
         dynamo=False,
         opset_version=17)
+    if args.onnx_add_metadata:
+        model = onnx.load(onnx_model_C)
+        hop = model.metadata_props.add()
+        hop.key = "hop_length"
+        hop.value = str(HOP_LENGTH)
+        onnx.save(model, onnx_model_C)
+
     del f5_decode
     del denoised
     del ref_signal_len
@@ -600,8 +638,9 @@ generated_signal = ort_session_C.run(
             in_name_C1: ref_signal_len
         })[0]
 end_count = time.time()
+print("generated_signal: shape=", generated_signal.shape, " dtype=", generated_signal.dtype)
 
-print("Saving audio to ", generated_audio)
+print("Saving audio to ", generated_audio, " at sample rate ", SAMPLE_RATE)
 sf.write(generated_audio, generated_signal.reshape(-1), SAMPLE_RATE, format='WAVEX')
 
 print(f"\nAudio generation is complete.\n\nONNXRuntime Time Cost in Seconds:\n{end_count - start_count:.3f}")
