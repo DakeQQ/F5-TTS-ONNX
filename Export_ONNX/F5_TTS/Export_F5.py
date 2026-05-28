@@ -37,7 +37,9 @@ parser.add_argument('--preprocessmodel_path', default=home+'/Downloads/F5_ONNX/F
 parser.add_argument('--transformermodel_path', default=home+'/Downloads/F5_ONNX/F5_Transformer.onnx', help='Path to export the transformer model to')
 parser.add_argument('--decodermodel_path', default=home+'/Downloads/F5_ONNX/F5_Decode.onnx', help='Path to export the Decode model to')
 DTYPEMAP={'f32':torch.float32, 'i16':torch.int16}
-parser.add_argument('--decoder_output_type', default='i16', help='Decoder output type. Default int16', choices=list(DTYPEMAP.keys()))
+TTYPEMAP={'f32':torch.FloatTensor, 'i16':torch.ShortTensor}
+parser.add_argument('--decoder_output_type', default='i16', help='Decoder output type. Default i16', choices=list(DTYPEMAP.keys()))
+parser.add_argument('--prepro_input_type', default='i16', help='Preprocessor audio input type. Default i16', choices=list(TTYPEMAP.keys()))
 parser.add_argument('--onnx_opset_version', default=17, type=int, help='ONNX opset version, default: 17')
 parser.add_argument('--onnx_add_metadata', action='store_true', default=False, help='Add some metadata to the onnx files (NFE_STEPS, ...)')
 parser.add_argument('--vocosmodel_dir', default=home+"/Downloads/vocos-mel-24khz", help='Folder containing the vocos model. Default to $HOME/Downloads/vocos-mel-24khz')
@@ -49,7 +51,10 @@ parser.add_argument('--seed', type=int, default=9527, help='ONNXRT Random seed')
 parser.add_argument('--target_rms', type=float, default=0.15, help='Audio root mean square, Default: 0.15')
 parser.add_argument('--nfe_step', type=int, default=32, help='Number of NFE steps (Number of Function Evaluations). Default:32')
 args = parser.parse_args()
-decoder_output_type=DTYPEMAP[args.decoder_output_type]
+
+decoder_output_type = DTYPEMAP[args.decoder_output_type] # float32 or int16
+prepro_audio_input_type = TTYPEMAP[args.prepro_input_type] # torch ShortTensor or FloatTensor
+
 logging.basicConfig(
  level=args.loglevel.upper(), #"INFO", ...
  #format='%(asctime)s - %(levelname)-8s - %(message)-16s'
@@ -145,6 +150,7 @@ from f5_tts.model import CFM, DiT  # Do not delete DiT
 from f5_tts.infer.utils_infer import load_checkpoint
 from vocos import Vocos
 
+
 class F5Preprocess(torch.nn.Module):
     def __init__(self, f5_model, custom_stft, nfft, n_mels, sample_rate, num_head, head_dim, target_rms, use_fp16):
         logging.debug(f"New F5Preprocess target_rms={target_rms}")
@@ -166,13 +172,15 @@ class F5Preprocess(torch.nn.Module):
         self.use_fp16 = use_fp16
 
     def forward(self,
-                audio: torch.ShortTensor,
+                refaudio: prepro_audio_input_type, #default: torch.ShortTensor
                 text_ids: torch.IntTensor,
                 max_duration: torch.LongTensor,
                 ):
-        audio = audio.float() * self.inv_int16
+        if prepro_audio_input_type == torch.ShortTensor:
+            refaudio = refaudio.float() * self.inv_int16
+        logging.debug(f"ref audio: dtype={refaudio.dtype}")
         # audio = audio * self.target_rms / torch.sqrt(torch.mean(audio * audio))  # Optional process
-        mel_signal_real, mel_signal_imag = self.custom_stft(audio, 'reflect')
+        mel_signal_real, mel_signal_imag = self.custom_stft(refaudio, 'reflect')
         mel_signal = torch.matmul(self.fbank, torch.sqrt(mel_signal_real * mel_signal_real + mel_signal_imag * mel_signal_imag)).transpose(1, 2).clamp(min=1e-5).log()
         ref_signal_len = mel_signal.shape[1]
         zeros = torch.zeros((1, max_duration, self.num_channels), dtype=torch.float32)
@@ -262,10 +270,7 @@ class F5Decode(torch.nn.Module):
             denoised = denoised.float()
         denoised = self.vocos.decode(denoised.transpose(1, 2))
         generated_signal = self.custom_istft(*denoised)
-        #logging.info(f"F5Decode: generated_signal before conversion: {generated_signal.dtype}")
         # generated_signal = generated_signal * self.target_rms / torch.sqrt(torch.mean(generated_signal * generated_signal))  # Optional process
-        #logging.info(f"sys maxint={sys.maxint}")
-        #logging.info(f"shrt_max={limits.shrt_max}")
         if self.output_type == torch.int16:
             max_int16 = float((1 << 15) - 1)  # Result: 32767.0
             return (generated_signal.clamp(min=-1.0, max=1.0) * 32767.0).to(torch.int16)
@@ -350,22 +355,26 @@ def list_str_to_idx(
     text = torch.nn.utils.rnn.pad_sequence(list_idx_tensors, padding_value=padding_value, batch_first=True)
     return text
 
+def add_metadata(model, key, value):
+    p = model.metadata_props.add()
+    p.key = key
+    p.value =  value
 
 print("\n\nStart to Export the F5-TTS Preprocess Part.")
 with torch.inference_mode():
     # Dummy for Export the F5_Preprocess part
-    audio = torch.ones((1, 1, AUDIO_LENGTH), dtype=torch.int16)
+    refaudio = torch.ones((1, 1, AUDIO_LENGTH), dtype=torch.int16 if prepro_audio_input_type == torch.ShortTensor else torch.float32)
     text_ids = torch.ones((1, TEXT_IDS_LENGTH), dtype=torch.int32)
     max_duration = torch.tensor([MAX_DURATION], dtype=torch.long)
     logging.info(f"Loading f5 model from {F5_safetensors_path}")
     f5_model, NUM_HEAD, HIDDEN_SIZE = load_model(F5_safetensors_path, omegacfg_path)
     HEAD_DIM = HIDDEN_SIZE // NUM_HEAD
-    logging.debug(f"HEAD-DIM={HEAD_DIM}")
+    logging.debug(f"Preprocess: HEAD-DIM={HEAD_DIM}")
     custom_stft = STFT_Process(model_type='stft_B', n_fft=NFFT, win_length=WINDOW_LENGTH, hop_len=HOP_LENGTH, max_frames=0, window_type=WINDOW_TYPE).eval()
     f5_preprocess = F5Preprocess(f5_model, custom_stft, nfft=NFFT, n_mels=N_MELS, sample_rate=SAMPLE_RATE, num_head=NUM_HEAD, head_dim=HEAD_DIM, target_rms=TARGET_RMS, use_fp16=use_fp16_transformer)
     torch.onnx.export(
         f5_preprocess,
-        (audio, text_ids, max_duration),
+        (refaudio, text_ids, max_duration),
         onnx_model_A,
         input_names=['audio', 'text_ids', 'max_duration'],
         output_names=['noise', 'rope_cos_q', 'rope_sin_q', 'rope_cos_k', 'rope_sin_k', 'cat_mel_text', 'cat_mel_text_drop', 'ref_signal_len'],
@@ -382,24 +391,20 @@ with torch.inference_mode():
         } if DYNAMIC_AXES else None,
         do_constant_folding=True,
         dynamo=False,
-        opset_version=17)
+        opset_version=onnx_opset_version)
     if args.onnx_add_metadata:
        logging.info("Adding metadata to the Prepro onnx model file...")
        model = onnx.load(onnx_model_A)
-       hop = model.metadata_props.add()
-       hop.key = "hop_length"
-       hop.value = str(HOP_LENGTH)
-       sr = model.metadata_props.add()
-       sr.key = "sample_rate"
-       sr.value = str(SAMPLE_RATE)
+       add_metadata(model, "hop_length", str(HOP_LENGTH))
+       add_metadata(model, "sample_rate", str(SAMPLE_RATE))
        onnx.save(model, onnx_model_A)
     del custom_stft
     del f5_preprocess
-    del audio
+    del refaudio
     del text_ids
     del max_duration
     gc.collect()
-print("\nExport Done.")
+print("\nPreprocessor export done.")
 
 
 print(f"\n\nStart to Export the F5-TTS Transformer Part. (fp16={use_fp16_transformer})")
@@ -454,13 +459,11 @@ with torch.inference_mode():
         } if DYNAMIC_AXES else None,
         do_constant_folding=True,
         dynamo=False,
-        opset_version=17)
+        opset_version=onnx_opset_version)
     if args.onnx_add_metadata:
        logging.info("Adding metadata to the Transformer onnx model file...")
        model = onnx.load(onnx_model_B)
-       nfes = model.metadata_props.add()
-       nfes.key = "default_nfe_steps"
-       nfes.value = str(NFE_STEP)
+       add_metadata(model, "default_nfe_steps",  str(NFE_STEP))
        onnx.save(model, onnx_model_B)
 
     del f5_transformer
@@ -473,13 +476,14 @@ with torch.inference_mode():
     del cat_mel_text_drop
     del time_step
     gc.collect()
-    print("\nExport Done.")
+    print("\nTransformer export Done.")
 
 
 print("\n\nStart to Export the F5-TTS Decode Part.")
 with torch.inference_mode():
     # Dummy for Export the F5_Decode part
     denoised = torch.ones((1, MAX_DURATION, N_MELS), dtype=dtype)
+    logging.debug("Exporting Decoder: REFERENCE_SIGNAL_LENGTH={REFERENCE_SIGNAL_LENGTH}")
     ref_signal_len = torch.tensor(REFERENCE_SIGNAL_LENGTH, dtype=torch.long)
     custom_istft = STFT_Process(model_type='istft_A', n_fft=NFFT, win_length=WINDOW_LENGTH, hop_len=HOP_LENGTH, max_frames=MAX_SIGNAL_LENGTH, window_type=WINDOW_TYPE).eval()
     # Vocos model preprocess
@@ -512,7 +516,7 @@ with torch.inference_mode():
         } if DYNAMIC_AXES else None,
         do_constant_folding=True,
         dynamo=False,
-        opset_version=17)
+        opset_version=onnx_opset_version)
     if args.onnx_add_metadata:
         model = onnx.load(onnx_model_C)
         hop = model.metadata_props.add()
@@ -526,7 +530,7 @@ with torch.inference_mode():
     del vocos
     del custom_istft
     gc.collect()
-    print("\nExport Done.")
+    print("\nDecoder export Done.")
 
 
 # ONNX Runtime settings
@@ -586,16 +590,23 @@ in_name_C0 = in_name_C[0].name
 in_name_C1 = in_name_C[1].name
 out_name_C0 = out_name_C[0].name
 
+print("\nRunning F5-TTS by ONNX Runtime:")
 
-# Run F5-TTS by ONNX Runtime
-audio = np.array(AudioSegment.from_file(reference_audio).set_channels(1).set_frame_rate(SAMPLE_RATE).get_array_of_samples(), dtype=np.int16)
-audio_len = len(audio)
-audio = audio.reshape(1, 1, -1)
+logging.debug(f"Reading ref audio file: {reference_audio}")
+refsamples = AudioSegment.from_file(reference_audio).set_channels(1).set_frame_rate(SAMPLE_RATE).get_array_of_samples()
+refaudio = np.array(refsamples, dtype=np.int16 if prepro_audio_input_type == torch.ShortTensor else np.float32)
+# if export has been done with prepro_audio_input_type == ShortTensor, then the onnx model will scale
+if prepro_audio_input_type == torch.FloatTensor:
+    inv_int16 = float(1.0 / 32768.0)
+    refaudio = refaudio * inv_int16
+
+audio_len = len(refaudio)
+refaudio = refaudio.reshape(1, 1, -1)
 
 zh_pause_punc = r"。，、；：？！"
 ref_text_len = len(ref_text.encode('utf-8')) + 3 * len(re.findall(zh_pause_punc, ref_text))
 gen_text_len = len(gen_text.encode('utf-8')) + 3 * len(re.findall(zh_pause_punc, gen_text))
-ref_audio_len = audio.shape[-1] // HOP_LENGTH + 1
+ref_audio_len = refaudio.shape[-1] // HOP_LENGTH + 1
 max_duration = np.array([ref_audio_len + int(ref_audio_len / ref_text_len * gen_text_len / SPEED)], dtype=np.int64)
 logging.debug("Input text before conversion to pinyin:")
 logging.debug(gen_text)
@@ -603,14 +614,15 @@ gen_text = convert_char_to_pinyin([ref_text + gen_text])
 logging.debug("Input text after conversion to pinyin:")
 logging.debug(gen_text)
 text_ids = list_str_to_idx(gen_text, vocab_char_map).numpy()
+logging.debug(text_ids)
 time_step = np.array([0], dtype=np.int32)
 
-print("\n\nRun F5-TTS by ONNX Runtime.")
+print("\nRun F5-TTS by ONNX Runtime:")
 start_count = time.time()
 noise, rope_cos_q, rope_sin_q, rope_cos_k, rope_sin_k, cat_mel_text, cat_mel_text_drop, ref_signal_len = ort_session_A.run(
         [out_name_A0, out_name_A1, out_name_A2, out_name_A3, out_name_A4, out_name_A5, out_name_A6, out_name_A7],
         {
-            in_name_A0: audio,
+            in_name_A0: refaudio,
             in_name_A1: text_ids,
             in_name_A2: max_duration
         })
