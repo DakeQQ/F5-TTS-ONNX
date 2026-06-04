@@ -28,9 +28,13 @@ parser.add_argument('--vocab_path', default='/home/DakeQQ/Downloads/F5TTS_v1_Bas
 parser.add_argument('--preprocessmodel_path', default='/home/DakeQQ/Downloads/F5_Optimized/F5_Preprocess.onnx', help='Path to the preprocessor model')
 parser.add_argument('--transformermodel_path', default='/home/DakeQQ/Downloads/F5_Optimized/F5_Transformer.onnx', help='Path to the transformer model')
 parser.add_argument('--decodermodel_path', default='/home/DakeQQ/Downloads/F5_Optimized/F5_Decode.onnx', help='Path to the Decode model')
+parser.add_argument('--force_nfe', type=int, default=-1, help='Force the NFE (Number of function Execution ie denoising). Default: 32 or any found in the metadata of the transformer onnx')
+TTYPEMAP={'f32':torch.FloatTensor, 'i16':torch.ShortTensor}
+parser.add_argument('--prepro_input_type', default='i16', help='Preprocessor audio input type. Default i16', choices=list(TTYPEMAP.keys()))
 parser.add_argument('--ort_provider', default='CPUExecutionProvider', help='OnnxRunTime execution provider: default CPUExecutionProvider')
 parser.add_argument('--numthreads', type=int, default=8, help='Number of threads to use for onnxrt intra and inter op')
 parser.add_argument('--profile', action='store_true', help='Enable onnxrt profiling, default false')
+parser.add_argument('--testlang', default='zh', help='Language to test: zh, en, ar,... Default:zh')
 args = parser.parse_args()
 
 logging.basicConfig(
@@ -43,16 +47,24 @@ onnx_model_A         = args.preprocessmodel_path  # The exported onnx model path
 onnx_model_B         = args.transformermodel_path # The exported onnx model path.
 onnx_model_C         = args.decodermodel_path     # The exported onnx model path.
 generated_audio      = "./generated_audio.wav"
-test_in_english = False
 
-if test_in_english:
+if args.testlang == 'en':
     reference_audio  = python_package_path + "/f5_tts/infer/examples/basic/basic_ref_en.wav"
     ref_text         = "Some call me nature, others call me mother nature."
     gen_text         = "Some call me Dake, others call me QQ."
+elif args.testlang == 'ar':
+    # Requires: pip install silma-tts
+    reference_audio  = python_package_path + "/silma_tts/infer/ref_audio_samples/ar.ref.24k.wav"
+    ref_text         = "ويدقق النظر في القرآن الكريم وسائر الكتب السماوية ويتبع مسالك الرسل العظام عليهم الصلاة والسلام."
+    gen_text         = """
+    أنا نموذج جديد من سلمى لتحويل النص إلى كلام، يمكنني التحدث باللغة العربية مع أو بدون علامات التشكيل.
+    """.strip()
+    logging.debug(gen_text)
 else:
     reference_audio  = python_package_path + "/f5_tts/infer/examples/basic/basic_ref_zh.wav"        # The reference audio path.
     ref_text         = "对，这就是我，万人敬仰的太乙真人。"                                               # The ASR result of reference audio.
     gen_text         = "对，这就是我，万人敬仰的大可奇奇。"                                               # The target TTS.
+
 
 providers = onnxruntime.get_available_providers()
 logging.info(f"Available ONNXRT providers: {providers}")
@@ -60,13 +72,15 @@ logging.info(f"Available ONNXRT providers: {providers}")
 ORT_Accelerate_Providers = [args.ort_provider]            # If you have accelerate devices for : ['CUDAExecutionProvider', 'TensorrtExecutionProvider', 'CoreMLExecutionProvider', 'DmlExecutionProvider', 'OpenVINOExecutionProvider', 'ROCMExecutionProvider', 'MIGraphXExecutionProvider', 'AzureExecutionProvider']
                                                           # else keep empty.
 RANDOM_SEED = 9527                                        # Set seed to reproduce the generated audio
-NFE_STEP = 32                                             # F5-TTS model setting, 0~31
+NFE_STEP = args.force_nfe if args.force_nfe > 0 else 32   # F5-TTS model setting, 0~31. Read from the onnx metadat if available.
 FUSE_NFE = 1                                              # Maintain the same values as the exported model.
 SPEED = 1.0                                               # Set for talking speed. Only works with dynamic_axes=True
 MAX_THREADS = args.numthreads                             # Max CPU parallel threads.
 DEVICE_ID = 0                                             # The GPU id, default to 0.
 MODEL_SAMPLE_RATE = 24000                                 # Do not modify it.
-HOP_LENGTH = 256                                          # It affects the generated audio length and speech speed.
+HOP_LENGTH = 256                                          # It affects the generated audio length and speech speed. Read from the decoder onnx file if any.
+
+prepro_audio_input_type = TTYPEMAP[args.prepro_input_type] # torch ShortTensor or FloatTensor
 
 if "OpenVINOExecutionProvider" in ORT_Accelerate_Providers:
     provider_options = [
@@ -210,7 +224,6 @@ out_name_A = ort_session_A.get_outputs()
 def print_model_info(session):
   meta = session.get_modelmeta()
   logging.debug(f"Session model: name:{meta.graph_name} domain:{meta.domain} descr:{meta.description} producer:{meta.producer_name}")
-  #logging.debug(meta.custom_metadata_map)
   inputs = session.get_inputs()
   logging.debug("Model inputs:")
   for i in range(0, len(inputs)):
@@ -222,6 +235,7 @@ def print_model_info(session):
   for o in range(0, len(outputs)):
     out = session.get_outputs()[o]
     logging.debug(f" output: {o}\t{out.name:16}\t {out.type:16}\t{out.shape}")
+  logging.debug(f"custom_metadata_map={meta.custom_metadata_map}")
 
 logging.debug("Preprocessor model:")
 print_model_info(ort_session_A)
@@ -245,6 +259,10 @@ else:
 ort_session_B = onnxruntime.InferenceSession(onnx_model_B, sess_options=session_opts, providers=ORT_Accelerate_Providers, provider_options=provider_options)
 logging.debug("Transformer model:")
 print_model_info(ort_session_B)
+metadataB = ort_session_B.get_modelmeta().custom_metadata_map
+if "default_nfe_steps" in metadataB and args.force_nfe < 0:
+    NFE_STEP = int(metadataB["default_nfe_steps"])
+logging.debug(f'NFE={NFE_STEP}')
 ORT_Accelerate_Providers = ort_session_B.get_providers()[0]
 # For Windows DirectML + Intel/AMD/Nvidia GPU,
 # pip install onnxruntime-directml --upgrade
@@ -268,6 +286,9 @@ session_opts.graph_optimization_level = onnxruntime.GraphOptimizationLevel.ORT_E
 ort_session_C = onnxruntime.InferenceSession(onnx_model_C, sess_options=session_opts, providers=['CPUExecutionProvider'], provider_options=None)
 logging.debug("Vocoder model:")
 print_model_info(ort_session_C)
+metadataC = ort_session_C.get_modelmeta().custom_metadata_map
+if 'hop_length' in metadataB:
+    HOP_LENGTH = int(metadataC['hop_length'])
 in_name_C = ort_session_C.get_inputs()
 out_name_C = ort_session_C.get_outputs()
 in_name_C0 = in_name_C[0].name
@@ -276,9 +297,13 @@ out_name_C0 = out_name_C[0].name
 
 # Load the input audio
 print(f"\nReference Audio: {reference_audio}")
-audio = np.array(AudioSegment.from_file(reference_audio).set_channels(1).set_frame_rate(MODEL_SAMPLE_RATE).get_array_of_samples(), dtype=np.int16)
-audio_len = len(audio)
-audio = audio.reshape(1, 1, -1)
+refsamples = AudioSegment.from_file(reference_audio).set_channels(1).set_frame_rate(MODEL_SAMPLE_RATE).get_array_of_samples()
+refaudio = np.array(refsamples, dtype=np.int16 if prepro_audio_input_type == torch.ShortTensor else np.float32)
+if prepro_audio_input_type == torch.FloatTensor:
+    inv_int16 = float(1.0 / 32768.0)
+    refaudio = refaudio * inv_int16
+audio_len = len(refaudio)
+refaudio = refaudio.reshape(1, 1, -1)
 
 zh_pause_punc = r"。，、；：？！"
 ref_text_len = len(ref_text.encode('utf-8')) + 3 * len(re.findall(zh_pause_punc, ref_text))
@@ -306,7 +331,7 @@ start_count = time.time()
 noise, rope_cos_q, rope_sin_q, rope_cos_k, rope_sin_k, cat_mel_text, cat_mel_text_drop, ref_signal_len = ort_session_A.run(
         [out_name_A0, out_name_A1, out_name_A2, out_name_A3, out_name_A4, out_name_A5, out_name_A6, out_name_A7],
         {
-            in_name_A0: audio,
+            in_name_A0: refaudio,
             in_name_A1: text_ids,
             in_name_A2: max_duration
         })
