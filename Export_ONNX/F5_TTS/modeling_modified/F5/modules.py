@@ -440,11 +440,15 @@ def apply_rotary_k(x, rope_cos, rope_sin, heads, head_dim, head_dim_half):
 
 # Attention processor
 class AttnProcessor:
-    def __init__(self, head_dim, hidden_size, heads):
+    def __init__(self, head_dim, hidden_size, heads, pe_attn_head=None):
         self.head_dim = head_dim
         self.head_dim_half = head_dim // 2
         self.hidden_size = hidden_size
         self.heads = heads
+        # pe_attn_head=None -> apply RoPE to all heads (F5TTS_v1_Base).
+        # pe_attn_head=int  -> apply RoPE to only the first `pe_attn_head` heads
+        #                      (F5TTS_Base / v0 checkpoints use pe_attn_head=1).
+        self.pe_attn_head = pe_attn_head
 
     def __call__(
         self,
@@ -462,8 +466,16 @@ class AttnProcessor:
         query = query.view(2, -1, attn.heads, self.head_dim).transpose(1, 2)
         key = key.view(2, -1, attn.heads, self.head_dim).permute(0, 2, 3, 1)
         value = value.view(2, -1, attn.heads, self.head_dim).transpose(1, 2)
-        query = apply_rotary_q(query, rope_cos_q, rope_sin_q, self.heads, self.head_dim, self.head_dim_half)
-        key = apply_rotary_k(key, rope_cos_k, rope_sin_k, self.heads, self.head_dim, self.head_dim_half)
+        if self.pe_attn_head is None:
+            query = apply_rotary_q(query, rope_cos_q, rope_sin_q, self.heads, self.head_dim, self.head_dim_half)
+            key = apply_rotary_k(key, rope_cos_k, rope_sin_k, self.heads, self.head_dim, self.head_dim_half)
+        else:
+            # Rotate only the first `pe_attn_head` heads; leave the rest un-rotated.
+            pn = self.pe_attn_head
+            q_rot = apply_rotary_q(query[:, :pn], rope_cos_q[:, :pn], rope_sin_q[:, :pn], pn, self.head_dim, self.head_dim_half)
+            k_rot = apply_rotary_k(key[:, :pn], rope_cos_k[:, :pn], rope_sin_k[:, :pn], pn, self.head_dim, self.head_dim_half)
+            query = torch.cat((q_rot, query[:, pn:]), dim=1)
+            key = torch.cat((k_rot, key[:, pn:]), dim=1)
         x = torch.matmul(torch.softmax(torch.matmul(query, key), dim=-1, dtype=torch.float32), value).transpose(1, 2).reshape(2, -1, self.hidden_size)
         return attn.to_out[0](x)
 
@@ -585,7 +597,7 @@ class DiTBlock(nn.Module):
 
         self.attn_norm = AdaLayerNorm(dim)
         self.attn = Attention(
-            processor=AttnProcessor(dim_head, dim, heads),
+            processor=AttnProcessor(dim_head, dim, heads, pe_attn_head=pe_attn_head),
             dim=dim,
             heads=heads,
             dim_head=dim_head,

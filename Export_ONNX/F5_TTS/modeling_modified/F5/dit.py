@@ -58,18 +58,24 @@ class TextEmbedding(nn.Module):
             pos_idx = self.freqs_cis[pos_idx]
 
             text = text + pos_idx
-            # convnextv2 blocks
-            text = text.masked_fill(text_mask, 0.0)
-            for block in self.text_blocks:
-                text = block(text)
-                text = text.masked_fill(text_mask, 0.0)
-
             text_drop = text_drop + pos_idx
-            # convnextv2 blocks
-            text_drop = text_drop.masked_fill(text_mask, 0.0)
-            for block in self.text_blocks:
-                text_drop = block(text_drop)
+            # convnextv2 blocks; only zero-out padding positions when the checkpoint was
+            # trained with padding masking (F5TTS_v1_Base: mask_padding=True). For
+            # F5TTS_Base / v0 checkpoints (mask_padding=False) masking corrupts the text.
+            if self.mask_padding:
+                text = text.masked_fill(text_mask, 0.0)
+                for block in self.text_blocks:
+                    text = block(text)
+                    text = text.masked_fill(text_mask, 0.0)
                 text_drop = text_drop.masked_fill(text_mask, 0.0)
+                for block in self.text_blocks:
+                    text_drop = block(text_drop)
+                    text_drop = text_drop.masked_fill(text_mask, 0.0)
+            else:
+                for block in self.text_blocks:
+                    text = block(text)
+                for block in self.text_blocks:
+                    text_drop = block(text_drop)
         return text, text_drop
 
 
