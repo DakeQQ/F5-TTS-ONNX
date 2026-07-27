@@ -1,0 +1,25 @@
+torch
+torchaudio
+f5-tts>=1.1.21
+vocos
+x-transformers
+safetensors
+omegaconf
+PyYAML
+
+onnx>=1.17
+onnxruntime>=1.20
+onnxslim
+onnxconverter-common
+
+numpy
+soundfile
+pydub
+pypinyin
+jieba
+rjieba
+huggingface-hub
+
+# Install silma-tts separately to use the bundled Arabic reference sample.
+# Replace onnxruntime with onnxruntime-gpu, onnxruntime-directml, or
+# onnxruntime-openvino when that execution provider is required.
