@@ -331,7 +331,7 @@ elif "CUDAExecutionProvider" in ORT_Accelerate_Providers or "TensorrtExecutionPr
     provider_options = [{
         'device_id':                          DEVICE_ID,
         'gpu_mem_limit':                      8 * (1024 ** 3),    # 8 GB
-        'arena_extend_strategy':              'kSameAsRequested',  # ["kNextPowerOfTwo", "kSameAsRequested"]
+        'arena_extend_strategy':              'kNextPowerOfTwo',  # ["kNextPowerOfTwo", "kSameAsRequested"]
         'cudnn_conv_algo_search':             'EXHAUSTIVE',       # ["DEFAULT", "HEURISTIC", "EXHAUSTIVE"]
         'sdpa_kernel':                        '2',                # ["0", "1", "2"]
         'use_tf32':                           '1',
