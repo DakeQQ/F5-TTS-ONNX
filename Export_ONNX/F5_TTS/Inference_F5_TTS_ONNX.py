@@ -634,7 +634,10 @@ inference_started = time.perf_counter()
 print_progress("Running acoustic preprocessing...")
 run(ort_session_Preprocess, binding_Preprocess)
 for destination, source in device_transfers:
-    destination.update_inplace(source)
+    try:
+        destination.update_inplace(source)
+    except TypeError:  # onnxruntime >= 1.24: numpy only
+        destination.update_inplace(source.numpy())
 print_progress(f"Running flow matching ({NFE_STEP} steps)...")
 progress_interval = max(1, NFE_STEP // 5)
 for step in range(NFE_STEP):
