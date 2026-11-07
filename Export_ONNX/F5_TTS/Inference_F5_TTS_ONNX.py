@@ -460,7 +460,11 @@ print_progress("Loading ONNX graph 2/3: F5_Transformer.onnx")
 ort_session_Transformer = create_session(onnx_model_Transformer, **packed_settings)
 print_progress(f"ONNX Runtime providers: {ort_session_Transformer.get_providers()}")
 print_progress("Loading ONNX graph 3/3: F5_Decode.onnx")
-ort_session_Decode = create_session(onnx_model_Decode, **packed_settings)
+# DirectML note: the Decode graph (Vocos, which contains ISTFT) can silently
+# produce all-zero audio on the DML EP -- the pipeline reports success and no
+# error is raised, but the written wav has peak == 0.  Running Decode on CPU
+# costs little (the graph is small) and fixes it.
+ort_session_Decode = create_session(onnx_model_Decode, **packed_settings_cpu)
 
 preprocess_inputs = tuple(ort_session_Preprocess.get_inputs())
 preprocess_outputs = tuple(ort_session_Preprocess.get_outputs())
@@ -644,7 +648,10 @@ for step in range(NFE_STEP):
             f"({time.perf_counter() - inference_started:.2f}s elapsed)"
         )
 if device_type != 'cpu':
-    decode_state_buffer.update_inplace(noise_final)
+    try:
+        decode_state_buffer.update_inplace(noise_final)
+    except TypeError:  # onnxruntime >= 1.24: numpy only
+        decode_state_buffer.update_inplace(noise_final.numpy())
 binding_Decode = ort_session_Decode.io_binding()
 bind_inputs(binding_Decode, decode_inputs, decode_input_values)
 try:
