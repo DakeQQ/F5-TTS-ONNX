@@ -460,7 +460,11 @@ print_progress("Loading ONNX graph 2/3: F5_Transformer.onnx")
 ort_session_Transformer = create_session(onnx_model_Transformer, **packed_settings)
 print_progress(f"ONNX Runtime providers: {ort_session_Transformer.get_providers()}")
 print_progress("Loading ONNX graph 3/3: F5_Decode.onnx")
-ort_session_Decode = create_session(onnx_model_Decode, **packed_settings)
+# DirectML: the Decode graph (Vocos, which contains ISTFT) can silently
+# produce all-zero audio on the DML EP -- the pipeline reports success and
+# raises no error, but the written wav has peak == 0. Running Decode on CPU
+# costs little (small graph) and fixes it.
+ort_session_Decode = create_session(onnx_model_Decode, **packed_settings_cpu)
 
 preprocess_inputs = tuple(ort_session_Preprocess.get_inputs())
 preprocess_outputs = tuple(ort_session_Preprocess.get_outputs())
@@ -630,7 +634,11 @@ inference_started = time.perf_counter()
 print_progress("Running acoustic preprocessing...")
 run(ort_session_Preprocess, binding_Preprocess)
 for destination, source in device_transfers:
-    destination.update_inplace(source)
+    # onnxruntime >= 1.24: update_inplace() only accepts a numpy array
+    try:
+        destination.update_inplace(source)
+    except TypeError:
+        destination.update_inplace(source.numpy())
 print_progress(f"Running flow matching ({NFE_STEP} steps)...")
 progress_interval = max(1, NFE_STEP // 5)
 for step in range(NFE_STEP):
@@ -644,7 +652,10 @@ for step in range(NFE_STEP):
             f"({time.perf_counter() - inference_started:.2f}s elapsed)"
         )
 if device_type != 'cpu':
-    decode_state_buffer.update_inplace(noise_final)
+    try:
+        decode_state_buffer.update_inplace(noise_final)
+    except TypeError:  # onnxruntime >= 1.24: numpy only
+        decode_state_buffer.update_inplace(noise_final.numpy())
 binding_Decode = ort_session_Decode.io_binding()
 bind_inputs(binding_Decode, decode_inputs, decode_input_values)
 try:
@@ -665,6 +676,11 @@ if generated_signal is None:
 inference_elapsed = time.perf_counter() - inference_started
 
 generated_signal = generated_signal.numpy()
+if np.abs(generated_signal).max() == 0:
+    raise RuntimeError(
+        "decoded audio is all zeros -- on DirectML this usually means the Decode "
+        "graph (Vocos/ISTFT) ran on the DML EP; use CPUExecutionProvider for Decode."
+    )
 audio_duration = generated_signal.size / OUT_SAMPLE_RATE
 rtf = inference_elapsed / max(audio_duration, 1.0e-9)
 print_progress(f"Writing generated audio: {generated_audio}")
