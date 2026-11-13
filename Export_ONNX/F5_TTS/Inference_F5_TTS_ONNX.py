@@ -64,7 +64,6 @@ def _parse_args():
     parser.add_argument("--preprocessmodel_path", "--preprocess-model-path", type=Path, help="Path to F5_Preprocess.onnx.")
     parser.add_argument("--transformermodel_path", "--transformer-model-path", type=Path, help="Path to F5_Transformer.onnx.")
     parser.add_argument("--decodermodel_path", "--decoder-model-path", type=Path, help="Path to F5_Decode.onnx.")
-    parser.add_argument("--force_nfe", "--force-nfe", type=int, default=-1, help="Override metadata NFE steps with a positive value no greater than the exported count.")
     parser.add_argument(
         "--prepro_input_type",
         "--prepro-input-type",
@@ -422,12 +421,7 @@ MODEL_SAMPLE_RATE = int(model_meta["sample_rate"])
 IN_SAMPLE_RATE    = int(model_meta["in_sample_rate"])
 OUT_SAMPLE_RATE   = int(model_meta["out_sample_rate"])
 HOP_LENGTH        = int(model_meta["hop_length"])
-EXPORTED_NFE_STEP = int(model_meta["nfe_step"])
-if _ARGS.force_nfe > EXPORTED_NFE_STEP:
-    raise ValueError(
-        f"force_nfe={_ARGS.force_nfe} exceeds the exported timestep table ({EXPORTED_NFE_STEP})."
-    )
-NFE_STEP = _ARGS.force_nfe if _ARGS.force_nfe > 0 else EXPORTED_NFE_STEP
+NFE_STEP          = int(model_meta["nfe_step"])  # Fixed at export time; cannot be changed at inference.
 MAX_SIGNAL_LENGTH = int(model_meta["max_signal_length"])
 onnx_model_Preprocess = str(
     (_ARGS.preprocessmodel_path or metadata_path.parent / model_meta["model_file_name_preprocess"])
@@ -630,6 +624,9 @@ else:
     )
     decode_input_values[decode_state_input.name] = decode_state_buffer
 
+print_progress(
+    f"NFE_STEP={NFE_STEP} is fixed at export time and cannot be changed during inference; re-export the model to change it."
+)
 inference_started = time.perf_counter()
 print_progress("Running acoustic preprocessing...")
 run(ort_session_Preprocess, binding_Preprocess)
